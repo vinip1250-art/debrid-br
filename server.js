@@ -8,43 +8,46 @@ app.use(cors());
 // ============================================================
 // CONFIGURAÇÕES DO ESPELHO
 // ============================================================
-const UPSTREAM_URL = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-const NEW_NAME = "Brazuca"; // Nome curto que aparecerá
+// URL Base do Brazuca (sem /manifest.json no final)
+const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
+const NEW_NAME = "Brazuca"; // Nome curto para aparecer na lista
 const NEW_LOGO = "https://i.imgur.com/Q61eP9V.png"; // Ícone novo
 
 // ============================================================
-// ROTA 1: MANIFESTO CUSTOMIZADO (O segredo do nome curto)
+// ROTA 1: MANIFESTO EDITADO (O segredo do nome curto)
 // ============================================================
 app.get('/addon/manifest.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
+    // Cache curto para garantir que atualizações do Brazuca cheguem rápido
+    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
     
     try {
-        // 1. Baixa o original
-        const response = await axios.get(`${UPSTREAM_URL}/manifest.json`);
+        // 1. Baixa o manifesto original
+        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
         const manifest = response.data;
 
-        // 2. Reescreve os dados cosméticos
+        // 2. Edita os dados cosméticos
         manifest.id = 'community.brazuca.proxy.renamed';
         manifest.name = NEW_NAME;
         manifest.description = "Brazuca (Wrapper StremThru)";
         manifest.logo = NEW_LOGO;
         
-        // 3. Entrega o JSON modificado
+        // 3. Retorna o JSON modificado
         res.json(manifest);
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: "Erro ao buscar manifesto original" });
+        console.error("Erro no upstream:", error.message);
+        res.status(500).json({ error: "Falha ao carregar manifesto original" });
     }
 });
 
 // ============================================================
-// ROTA 2: REDIRECIONADOR DE RECURSOS (Streams/Catálogos)
+// ROTA 2: REDIRECIONADOR DE RECURSOS
 // ============================================================
-// Redireciona qualquer outra requisição do addon (/stream, /catalog, /meta)
-// diretamente para o servidor original. Isso evita sobrecarga e erros 400/500.
+// Redireciona streams, catálogos e metas para o original.
+// Isso evita erro 400/500 no StremThru.
 app.use('/addon', (req, res) => {
-    const redirectUrl = `${UPSTREAM_URL}${req.path}`;
+    const redirectUrl = `${UPSTREAM_BASE}${req.path}`;
     res.redirect(307, redirectUrl);
 });
 
@@ -59,9 +62,8 @@ const generatorHtml = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Brazuca Pro Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { background-color: #050505; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; }
+        body { background-color: #050505; color: #e2e8f0; font-family: sans-serif; }
         .card { background-color: #111; border: 1px solid #333; }
         .input-dark { background-color: #000; border: 1px solid #333; color: white; }
         .input-dark:focus { border-color: #3b82f6; outline: none; }
@@ -76,7 +78,7 @@ const generatorHtml = `
         <div class="text-center mb-6">
             <img src="${NEW_LOGO}" class="w-12 h-12 mx-auto mb-2 rounded-full border border-gray-700">
             <h1 class="text-xl font-bold text-white">Brazuca Wrapper</h1>
-            <p class="text-gray-500 text-xs">Gera um addon com nome curto e suporte duplo</p>
+            <p class="text-gray-500 text-xs">Gerador StremThru • Dual Debrid • Nome Curto</p>
         </div>
 
         <form class="space-y-5">
@@ -84,10 +86,10 @@ const generatorHtml = `
             <!-- Instância -->
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">Instância StremThru</label>
-                <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1">
+                <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
                     <option value="https://stremthru.elfhosted.com">ElfHosted (Estável)</option>
                     <option value="https://stremthrufortheweebs.midnightignite.me">Midnight (Weebs)</option>
-                    <option value="https://stremthru.midnightignite.me">Midnight (Padrão)</option>
+                    <option value="https://api.stremthru.xyz">StremThru Oficial</option>
                     <option value="custom">Outra...</option>
                 </select>
                 <input type="text" id="custom_instance" placeholder="https://..." class="hidden w-full input-dark p-3 rounded-lg text-sm mt-2">
@@ -97,31 +99,31 @@ const generatorHtml = `
             <div class="space-y-3">
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">Tokens (Store StremThru)</label>
                 
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" id="use_rd" class="accent-blue-600" onchange="validate()">
-                    <input type="text" id="rd_key" placeholder="Token Real-Debrid" class="w-full input-dark p-2 rounded text-xs" disabled>
+                <div class="flex items-center gap-2 bg-[#1a1a1a] p-2 rounded border border-gray-800">
+                    <input type="checkbox" id="use_rd" class="accent-blue-600 w-4 h-4" onchange="validate()">
+                    <input type="text" id="rd_key" placeholder="Token Real-Debrid" class="w-full input-dark p-2 rounded text-xs bg-transparent border-none focus:ring-0" disabled>
                 </div>
 
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" id="use_tb" class="accent-purple-600" onchange="validate()">
-                    <input type="text" id="tb_key" placeholder="Token TorBox" class="w-full input-dark p-2 rounded text-xs" disabled>
+                <div class="flex items-center gap-2 bg-[#1a1a1a] p-2 rounded border border-gray-800">
+                    <input type="checkbox" id="use_tb" class="accent-purple-600 w-4 h-4" onchange="validate()">
+                    <input type="text" id="tb_key" placeholder="Token TorBox" class="w-full input-dark p-2 rounded text-xs bg-transparent border-none focus:ring-0" disabled>
                 </div>
             </div>
 
             <!-- Resultado -->
             <div id="resultArea" class="hidden pt-4 border-t border-gray-800 space-y-3">
                 <div class="relative">
-                    <input type="text" id="finalUrl" readonly class="w-full bg-gray-900 border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12">
-                    <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold">
+                    <input type="text" id="finalUrl" readonly class="w-full bg-gray-900 border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono">
+                    <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">
                         COPY
                     </button>
                 </div>
-                <a id="installBtn" href="#" class="block w-full btn-action py-3 rounded-lg text-center font-bold text-sm">
-                    INSTALAR AGORA
+                <a id="installBtn" href="#" class="block w-full btn-action py-3 rounded-lg text-center font-bold text-sm uppercase tracking-wide shadow-lg shadow-blue-900/20">
+                    INSTALAR NO STREMIO
                 </a>
             </div>
 
-            <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-800 text-gray-500 py-3 rounded-lg text-sm font-bold cursor-not-allowed" disabled>
+            <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-800 text-gray-500 py-3 rounded-lg text-sm font-bold cursor-not-allowed transition" disabled>
                 GERAR LINK
             </button>
 
@@ -145,8 +147,13 @@ const generatorHtml = `
 
             rdInput.disabled = !rd;
             tbInput.disabled = !tb;
+            
             if(!rd) rdInput.value = '';
             if(!tb) tbInput.value = '';
+            
+            // Visual disabled
+            rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
+            tbInput.parentElement.style.opacity = tb ? '1' : '0.5';
 
             const isValid = (rd && rdInput.value.trim()) || (tb && tbInput.value.trim());
 
@@ -170,25 +177,31 @@ const generatorHtml = `
             let host = instanceSelect.value === 'custom' ? customInput.value.trim() : instanceSelect.value;
             host = host.replace(/\\/$/, '').replace('http:', 'https:');
 
-            // AQUI ESTÁ O TRUQUE:
-            // Em vez de apontar para o Brazuca original, apontamos para o NOSSO espelho (/addon/manifest.json)
+            // --- PULO DO GATO ---
+            // Aponta para o NOSSO espelho (/addon/manifest.json)
             // Assim o StremThru lê o nome curto "Brazuca"
             const myMirrorUrl = window.location.origin + "/addon/manifest.json";
 
             let config = { upstreams: [], stores: [] };
 
+            // Configura Real-Debrid
             if (document.getElementById('use_rd').checked) {
                 config.upstreams.push({ u: myMirrorUrl });
                 config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
             }
+            
+            // Configura TorBox
             if (document.getElementById('use_tb').checked) {
                 config.upstreams.push({ u: myMirrorUrl });
                 config.stores.push({ c: "tb", t: document.getElementById('tb_key').value.trim() });
             }
 
             const b64 = btoa(JSON.stringify(config));
+            // Limpa protocolo para criar stremio://
+            const hostClean = host.replace(/^https?:\\/\\//, '');
+            
             const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
-            const stremioUrl = httpsUrl.replace(/^https?/, 'stremio');
+            const stremioUrl = \`stremio://\${hostClean}/stremio/wrap/\${b64}/manifest.json\`;
 
             document.getElementById('finalUrl').value = httpsUrl;
             document.getElementById('installBtn').href = stremioUrl;
