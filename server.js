@@ -1,38 +1,8 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
 const app = express();
 
 app.use(cors());
-
-// ============================================================
-// CONFIGURAÇÕES
-// ============================================================
-const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json";
-const NEW_NAME = "Brazuca"; 
-const NEW_LOGO = "https://i.imgur.com/Q61eP9V.png";
-
-// ============================================================
-// ROTA PROXY (Cria manifesto modificado)
-// ============================================================
-app.get('/brazuca.json', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
-    
-    try {
-        const response = await axios.get(BRAZUCA_UPSTREAM);
-        const manifest = response.data;
-
-        manifest.id = 'community.brazuca.modified.proxy';
-        manifest.name = NEW_NAME;
-        manifest.description = "Brazuca via StremThru (Dual Debrid)";
-        manifest.logo = NEW_LOGO;
-        
-        res.json(manifest);
-    } catch (error) {
-        res.status(500).json({ error: "Falha no upstream" });
-    }
-});
 
 // ============================================================
 // HTML DO GERADOR
@@ -47,58 +17,61 @@ const generatorHtml = `
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { background-color: #0f1115; color: #e2e8f0; font-family: 'Segoe UI', sans-serif; }
+        body { background-color: #0b0c10; color: #c5c6c7; font-family: 'Segoe UI', sans-serif; }
         .card { background-color: #181b21; border: 1px solid #2d3748; }
         .input-dark { background-color: #0f1115; border: 1px solid #2d3748; color: white; }
         .input-dark:focus { border-color: #6366f1; outline: none; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+        .btn-action { background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 100%); color: white; font-weight: bold; }
+        .btn-action:hover { transform: translateY(-1px); filter: brightness(1.1); }
         
-        /* Animação de sucesso */
-        @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-        .toast { animation: fadeOut 2s forwards; animation-delay: 1s; }
+        /* Toast Anim */
+        @keyframes slideUp { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .toast { animation: slideUp 0.3s ease-out; }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4">
+<body class="min-h-screen flex items-center justify-center p-4 bg-black">
 
-    <div class="w-full max-w-xl card rounded-2xl shadow-2xl overflow-hidden relative">
+    <div class="w-full max-w-lg card rounded-2xl shadow-2xl overflow-hidden relative border border-gray-800">
         
-        <!-- Header -->
-        <div class="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-center">
-            <img src="${NEW_LOGO}" class="w-14 h-14 mx-auto mb-3 rounded-full shadow-lg border-2 border-white/20">
-            <h1 class="text-2xl font-bold text-white">Gerador Brazuca Pro</h1>
-            <p class="text-blue-100 text-xs mt-1">Wrapper StremThru • RD & TorBox</p>
+        <!-- Cabeçalho -->
+        <div class="bg-[#111] p-6 text-center border-b border-gray-800">
+            <h1 class="text-2xl font-bold text-white tracking-tight">Brazuca Wrapper</h1>
+            <p class="text-gray-500 text-xs mt-1">Gerador de Links StremThru Estável</p>
         </div>
 
-        <div class="p-8 space-y-6">
+        <div class="p-6 space-y-6">
             
             <!-- 1. Instância -->
             <div>
-                <label class="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">1. Instância StremThru</label>
+                <label class="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">1. Escolha a Instância</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm cursor-pointer">
-                    <option value="https://stremthru.elfhosted.com">ElfHosted (Estável)</option>
-                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight (Alternativa)</option>
+                    <option value="https://stremthru.elfhosted.com">ElfHosted (Mais Estável)</option>
                     <option value="https://stremthru.midnightignite.me">Midnight (Padrão)</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight (Weebs)</option>
+                    <option value="https://api.stremthru.xyz">Oficial</option>
                     <option value="custom">Outra...</option>
                 </select>
                 <input type="text" id="custom_instance" placeholder="https://..." class="hidden w-full input-dark p-3 rounded-lg text-sm mt-2">
             </div>
 
-            <!-- 2. Debrids -->
+            <!-- 2. Serviços -->
             <div class="space-y-3">
-                <label class="block text-xs font-bold text-gray-400 uppercase ml-1">2. Serviços</label>
+                <label class="block text-xs font-bold text-gray-400 uppercase ml-1">2. Configurar Debrid</label>
                 
                 <!-- RD -->
-                <div class="bg-[#0f1115] p-3 rounded-xl border border-gray-800">
+                <div class="bg-[#0f1115] p-3 rounded-lg border border-gray-800">
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" id="use_rd" class="w-4 h-4 accent-indigo-500" onchange="toggleInputs()">
                         <span class="text-sm font-bold text-white">Real-Debrid</span>
                     </label>
                     <div id="rd_area" class="hidden mt-2 pt-2 border-t border-gray-800">
                         <input type="text" id="rd_key" placeholder="Token Store 'rd' (StremThru)" class="w-full input-dark p-2 rounded text-xs text-gray-300">
+                        <p class="text-[10px] text-gray-600 mt-1">Não é a API Key! É o Token do StremThru Manager.</p>
                     </div>
                 </div>
 
                 <!-- TB -->
-                <div class="bg-[#0f1115] p-3 rounded-xl border border-gray-800">
+                <div class="bg-[#0f1115] p-3 rounded-lg border border-gray-800">
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" id="use_tb" class="w-4 h-4 accent-purple-500" onchange="toggleInputs()">
                         <span class="text-sm font-bold text-white">TorBox</span>
@@ -109,38 +82,40 @@ const generatorHtml = `
                 </div>
             </div>
 
-            <!-- Área de Resultado (Inicialmente Oculta) -->
-            <div id="resultArea" class="hidden space-y-3 pt-4 border-t border-gray-700">
-                <label class="block text-xs font-bold text-green-400 uppercase ml-1">Link Gerado</label>
-                
-                <!-- Input com o link para copiar -->
-                <div class="flex gap-2">
-                    <input type="text" id="finalUrl" readonly class="w-full input-dark p-3 rounded-lg text-xs text-gray-400 select-all">
-                    <button onclick="copyLink()" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg transition" title="Copiar">
-                        <i class="fas fa-copy"></i>
-                    </button>
+            <!-- Área de Resultado -->
+            <div id="resultArea" class="hidden space-y-3 pt-4 border-t border-gray-800">
+                <div class="bg-green-900/20 border border-green-800 rounded-lg p-3">
+                    <p class="text-green-400 text-xs font-bold mb-1">URL Gerada:</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="finalUrl" readonly class="w-full bg-black/50 border border-green-900 rounded px-2 py-1 text-[10px] text-gray-400 font-mono truncate">
+                        <button onclick="copyLink()" class="bg-green-700 hover:bg-green-600 text-white px-3 py-1 rounded text-xs font-bold transition">
+                            COPIAR
+                        </button>
+                    </div>
                 </div>
 
-                <!-- Botão Instalar -->
-                <a id="installBtn" href="#" class="block w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl text-center transition shadow-lg shadow-indigo-900/20">
-                    <i class="fas fa-play mr-2"></i> INSTALAR NO STREMIO
+                <a id="installBtn" href="#" class="block w-full btn-action py-3 rounded-xl text-center shadow-lg shadow-indigo-900/20 text-sm uppercase tracking-widest">
+                    INSTALAR NO STREMIO
                 </a>
             </div>
 
-            <!-- Botão Gerar (Some após gerar) -->
-            <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-700 text-gray-400 font-bold py-3 rounded-xl transition cursor-not-allowed" disabled>
+            <!-- Botão Gerar -->
+            <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-800 text-gray-500 font-bold py-3 rounded-xl transition cursor-not-allowed text-sm uppercase" disabled>
                 PREENCHA OS DADOS
             </button>
 
         </div>
     </div>
 
-    <!-- Toast Notification -->
-    <div id="toast" class="fixed bottom-5 right-5 bg-green-600 text-white px-4 py-2 rounded-lg shadow-xl hidden">
-        Copiado com sucesso!
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-5 left-1/2 transform -translate-x-1/2 bg-white text-black px-6 py-2 rounded-full shadow-2xl font-bold text-xs hidden toast">
+        URL COPIADA!
     </div>
 
     <script>
+        // URL Direta do Brazuca (Sem Proxy para evitar erro 400)
+        const BRAZUCA_DIRECT = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json";
+
         const instanceSelect = document.getElementById('instance');
         const customInput = document.getElementById('custom_instance');
 
@@ -171,13 +146,13 @@ const generatorHtml = `
             if (!rd && !tb) isValid = false;
 
             if(isValid) {
-                btn.classList.remove('bg-gray-700', 'text-gray-400', 'cursor-not-allowed');
-                btn.classList.add('bg-indigo-600', 'hover:bg-indigo-500', 'text-white');
-                btn.innerText = "GERAR CONFIGURAÇÃO";
+                btn.classList.remove('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+                btn.classList.add('btn-action', 'cursor-pointer');
+                btn.innerText = "GERAR LINK";
                 btn.disabled = false;
             } else {
-                btn.classList.add('bg-gray-700', 'text-gray-400', 'cursor-not-allowed');
-                btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-500', 'text-white');
+                btn.classList.add('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+                btn.classList.remove('btn-action', 'cursor-pointer');
                 btn.innerText = "PREENCHA OS DADOS";
                 btn.disabled = true;
             }
@@ -195,50 +170,53 @@ const generatorHtml = `
             host = host.replace(/\\/$/, '');
             if (!host.startsWith('http')) host = 'https://' + host;
 
-            const myProxyUrl = window.location.origin + "/brazuca.json";
-
             let config = { upstreams: [], stores: [] };
 
+            // Usamos o link direto do Brazuca para evitar erros de rede no StremThru
             if (useRd) {
-                config.upstreams.push({ u: myProxyUrl });
+                config.upstreams.push({ u: BRAZUCA_DIRECT });
                 config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
             }
             if (useTb) {
-                config.upstreams.push({ u: myProxyUrl });
+                config.upstreams.push({ u: BRAZUCA_DIRECT });
                 config.stores.push({ c: "tb", t: document.getElementById('tb_key').value.trim() });
             }
 
             const jsonStr = JSON.stringify(config);
             const base64Config = btoa(jsonStr);
             
-            const hostClean = host.replace('https://', '').replace('http://', '');
-            const stremioUrl = \`stremio://\${hostClean}/stremio/wrap/\${base64Config}/manifest.json\`;
+            // URLs
             const httpsUrl = \`\${host}/stremio/wrap/\${base64Config}/manifest.json\`;
+            // Para o botão, removemos o protocolo para abrir direto no app
+            const stremioProtocol = host.replace('https://', '').replace('http://', '');
+            const stremioUrl = \`stremio://\${stremioProtocol}/stremio/wrap/\${base64Config}/manifest.json\`;
 
-            // Mostrar resultado
+            // UI Update
             document.getElementById('btnGenerate').classList.add('hidden');
             document.getElementById('resultArea').classList.remove('hidden');
             
-            const finalInput = document.getElementById('finalUrl');
-            finalInput.value = httpsUrl; // URL HTTPS para copiar
-            
-            document.getElementById('installBtn').href = stremioUrl; // Link Stremio para instalar
+            document.getElementById('finalUrl').value = httpsUrl;
+            document.getElementById('installBtn').href = stremioUrl;
         }
 
         function copyLink() {
             const copyText = document.getElementById("finalUrl");
             copyText.select();
-            copyText.setSelectionRange(0, 99999); 
-            document.execCommand("copy"); // Fallback seguro
+            copyText.setSelectionRange(0, 99999);
             
-            // Mostrar Toast
+            navigator.clipboard.writeText(copyText.value).then(() => {
+                showToast();
+            }).catch(() => {
+                // Fallback
+                document.execCommand("copy");
+                showToast();
+            });
+        }
+
+        function showToast() {
             const toast = document.getElementById('toast');
             toast.classList.remove('hidden');
-            toast.classList.add('toast');
-            setTimeout(() => {
-                toast.classList.add('hidden');
-                toast.classList.remove('toast');
-            }, 3000);
+            setTimeout(() => toast.classList.add('hidden'), 2000);
         }
     </script>
 </body>
@@ -246,11 +224,7 @@ const generatorHtml = `
 `;
 
 app.get('/', (req, res) => res.send(generatorHtml));
-
-app.get('*', (req, res) => {
-    if (req.path === '/brazuca.json') return; 
-    res.redirect('/');
-});
+app.get('*', (req, res) => res.redirect('/'));
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
