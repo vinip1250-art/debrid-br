@@ -1,11 +1,45 @@
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 const app = express();
 
 app.use(cors());
 
 // ============================================================
-// HTML DO GERADOR (INTERFACE DE CONFIGURAÇÃO)
+// CONFIGURAÇÕES
+// ============================================================
+const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json";
+const NEW_NAME = "Brazuca"; // Nome encurtado
+const NEW_LOGO = "https://i.imgur.com/Q61eP9V.png"; // Ícone novo (Exemplo: Bandeira BR redonda ou similar)
+
+// ============================================================
+// ROTA PROXY (Essa rota cria o manifesto modificado)
+// ============================================================
+app.get('/brazuca.json', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
+    
+    try {
+        // 1. Baixa o manifesto original do Brazuca
+        const response = await axios.get(BRAZUCA_UPSTREAM);
+        const manifest = response.data;
+
+        // 2. Modifica o Nome e Ícone
+        manifest.id = 'community.brazuca.modified.proxy'; // Novo ID para evitar conflitos
+        manifest.name = NEW_NAME;
+        manifest.description = "Brazuca modificado para StremThru (Nome Curto)";
+        manifest.logo = NEW_LOGO;
+        
+        // 3. Retorna o manifesto modificado
+        res.json(manifest);
+    } catch (error) {
+        console.error("Erro ao buscar manifesto original:", error.message);
+        res.status(500).json({ error: "Falha ao obter manifesto original" });
+    }
+});
+
+// ============================================================
+// HTML DO GERADOR
 // ============================================================
 const generatorHtml = `
 <!DOCTYPE html>
@@ -13,79 +47,87 @@ const generatorHtml = `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brazuca StremThru Generator</title>
+    <title>Brazuca Wrapper</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #0b0c10; color: #c5c6c7; font-family: sans-serif; }
-        .card { background-color: #1f2833; border: 1px solid #45a29e; box-shadow: 0 0 15px rgba(102, 252, 241, 0.1); }
-        .input-dark { background-color: #0b0c10; border: 1px solid #45a29e; color: #fff; }
-        .input-dark:focus { box-shadow: 0 0 8px #66fcf1; outline: none; }
-        .btn-action { background: linear-gradient(90deg, #45a29e 0%, #66fcf1 100%); color: #0b0c10; font-weight: bold; }
-        .btn-action:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 252, 241, 0.4); }
-        select option { background-color: #0b0c10; color: white; }
+        body { background-color: #0f1115; color: #e2e8f0; font-family: sans-serif; }
+        .card { background-color: #181b21; border: 1px solid #2d3748; }
+        .input-dark { background-color: #0f1115; border: 1px solid #2d3748; color: white; transition: all 0.2s; }
+        .input-dark:focus { border-color: #6366f1; outline: none; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+        select option { background-color: #0f1115; }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-black to-gray-900">
+<body class="min-h-screen flex items-center justify-center p-4">
 
-    <div class="w-full max-w-2xl card rounded-2xl p-8 relative overflow-hidden">
-        <div class="text-center mb-10">
-            <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2">Brazuca <span class="text-white">Wrapper</span></h1>
-            <p class="text-gray-400 text-sm">Gerador de manifesto StremThru automatizado</p>
+    <div class="w-full max-w-xl card rounded-2xl shadow-2xl overflow-hidden">
+        
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-700 p-6 text-center">
+            <img src="${NEW_LOGO}" class="w-16 h-16 mx-auto mb-3 rounded-full shadow-lg border-2 border-white/20">
+            <h1 class="text-2xl font-bold text-white tracking-tight">Gerador Brazuca Pro</h1>
+            <p class="text-blue-100 text-xs mt-1">RD & TorBox Simultâneos • Nome Curto</p>
         </div>
 
-        <form id="configForm" class="space-y-8">
+        <div class="p-8 space-y-6">
             
             <!-- 1. Instância -->
-            <div class="space-y-2">
-                <label class="text-xs font-bold text-[#66fcf1] uppercase tracking-wider">1. Escolha a Instância StremThru</label>
-                <select id="instance" class="w-full input-dark p-4 rounded-xl text-sm cursor-pointer appearance-none">
-                    <option value="https://stremthru.midnightignite.me">Midnight Ignite (Recomendado)</option>
+            <div>
+                <label class="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">1. Instância StremThru</label>
+                <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm cursor-pointer">
                     <option value="https://stremthru.elfhosted.com">ElfHosted (Estável)</option>
-                    <option value="https://api.stremthru.xyz">StremThru Oficial</option>
-                    <option value="custom">Outra (Digitar URL...)</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight (Weebs Edition)</option>
+                    <option value="https://stremthru.midnightignite.me">Midnight (Padrão)</option>
+                    <option value="custom">Outra...</option>
                 </select>
-                <input type="text" id="custom_instance" placeholder="Ex: https://minha-instancia.com" class="hidden w-full input-dark p-4 rounded-xl text-sm mt-2">
+                <input type="text" id="custom_instance" placeholder="https://..." class="hidden w-full input-dark p-3 rounded-lg text-sm mt-2">
             </div>
 
             <!-- 2. Debrids -->
-            <div class="space-y-4">
-                <label class="text-xs font-bold text-[#66fcf1] uppercase tracking-wider">2. Configure seus Debrids</label>
+            <div>
+                <label class="block text-xs font-bold text-gray-400 uppercase mb-3 ml-1">2. Configure os Serviços</label>
                 
-                <!-- Real Debrid -->
-                <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-blue-500 transition-colors">
-                    <label class="flex items-center gap-3 cursor-pointer mb-3">
-                        <input type="checkbox" id="use_rd" class="w-5 h-5 accent-[#66fcf1]" onchange="toggleInputs()">
-                        <span class="text-lg font-bold text-white">Real-Debrid</span>
-                    </label>
-                    <div id="rd_area" class="hidden pl-8">
-                        <input type="text" id="rd_key" placeholder="Cole sua API Key do Real-Debrid aqui" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600">
+                <div class="space-y-3">
+                    <!-- Real Debrid -->
+                    <div class="bg-[#0f1115] p-4 rounded-xl border border-gray-800 hover:border-indigo-500/50 transition-colors">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="use_rd" class="w-5 h-5 accent-indigo-500 rounded" onchange="toggleInputs()">
+                            <div class="flex-1">
+                                <span class="text-sm font-bold text-white">Real-Debrid</span>
+                            </div>
+                        </label>
+                        <div id="rd_area" class="hidden mt-3 pt-3 border-t border-gray-800">
+                            <input type="text" id="rd_key" placeholder="Token do Store 'rd' (StremThru)" class="w-full input-dark p-2.5 rounded text-xs text-gray-300">
+                        </div>
                     </div>
-                </div>
 
-                <!-- TorBox -->
-                <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-purple-500 transition-colors">
-                    <label class="flex items-center gap-3 cursor-pointer mb-3">
-                        <input type="checkbox" id="use_tb" class="w-5 h-5 accent-[#66fcf1]" onchange="toggleInputs()">
-                        <span class="text-lg font-bold text-white">TorBox</span>
-                    </label>
-                    <div id="tb_area" class="hidden pl-8">
-                        <input type="text" id="tb_key" placeholder="Cole sua API Key do TorBox aqui" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600">
+                    <!-- TorBox -->
+                    <div class="bg-[#0f1115] p-4 rounded-xl border border-gray-800 hover:border-purple-500/50 transition-colors">
+                        <label class="flex items-center gap-3 cursor-pointer">
+                            <input type="checkbox" id="use_tb" class="w-5 h-5 accent-purple-500 rounded" onchange="toggleInputs()">
+                            <div class="flex-1">
+                                <span class="text-sm font-bold text-white">TorBox</span>
+                            </div>
+                        </label>
+                        <div id="tb_area" class="hidden mt-3 pt-3 border-t border-gray-800">
+                            <input type="text" id="tb_key" placeholder="Token do Store 'tb' (StremThru)" class="w-full input-dark p-2.5 rounded text-xs text-gray-300">
+                        </div>
                     </div>
                 </div>
             </div>
 
             <!-- Botão -->
-            <button type="button" onclick="generate()" id="btnGenerate" class="w-full btn-action py-4 rounded-xl text-lg uppercase tracking-widest transition-all opacity-50 cursor-not-allowed">
-                Instalar no Stremio
+            <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl transition-all opacity-50 cursor-not-allowed shadow-lg shadow-indigo-900/20">
+                GERAR LINK
             </button>
 
-        </form>
+        </div>
+        
+        <div class="bg-[#0f1115] p-3 text-center border-t border-gray-800">
+            <p class="text-[10px] text-gray-600">Gera um link wrap automatizado.</p>
+        </div>
     </div>
 
     <script>
-        // URL do Manifesto do Brazuca Original
-        const BRAZUCA_MANIFEST_URL = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json";
-
         const instanceSelect = document.getElementById('instance');
         const customInput = document.getElementById('custom_instance');
 
@@ -97,6 +139,7 @@ const generatorHtml = `
         function toggleInputs() {
             const rd = document.getElementById('use_rd').checked;
             const tb = document.getElementById('use_tb').checked;
+            
             document.getElementById('rd_area').style.display = rd ? 'block' : 'none';
             document.getElementById('tb_area').style.display = tb ? 'block' : 'none';
             validate();
@@ -116,8 +159,13 @@ const generatorHtml = `
             if (tb && !tbKey) isValid = false;
             if (!rd && !tb) isValid = false;
 
-            if(isValid) btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            else btn.classList.add('opacity-50', 'cursor-not-allowed');
+            if(isValid) {
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                btn.disabled = false;
+            } else {
+                btn.classList.add('opacity-50', 'cursor-not-allowed');
+                btn.disabled = true;
+            }
         }
 
         document.getElementById('rd_key').addEventListener('input', validate);
@@ -132,27 +180,29 @@ const generatorHtml = `
             host = host.replace(/\\/$/, '');
             if (!host.startsWith('http')) host = 'https://' + host;
 
-            // Constroi o JSON exatamente como o exemplo que funcionou
+            // PULO DO GATO: Usamos o NOSSO proxy local como upstream
+            // Assim o StremThru vê o manifesto com nome curto e ícone novo
+            const myProxyUrl = window.location.origin + "/brazuca.json";
+
             let config = {
                 upstreams: [],
                 stores: []
             };
 
-            // Se RD ativado, adiciona uma entrada de upstream e store
+            // Adiciona RD
             if (useRd) {
-                config.upstreams.push({ u: BRAZUCA_MANIFEST_URL });
+                config.upstreams.push({ u: myProxyUrl });
                 config.stores.push({
-                    c: "rd",
+                    c: "rd", // Código da loja no StremThru
                     t: document.getElementById('rd_key').value.trim()
                 });
             }
 
-            // Se TB ativado, adiciona outra entrada de upstream e store
-            // Isso força a duplicação dos resultados na lista do Stremio
+            // Adiciona TB
             if (useTb) {
-                config.upstreams.push({ u: BRAZUCA_MANIFEST_URL });
+                config.upstreams.push({ u: myProxyUrl });
                 config.stores.push({
-                    c: "tb",
+                    c: "tb", // Código da loja no StremThru
                     t: document.getElementById('tb_key').value.trim()
                 });
             }
@@ -160,7 +210,7 @@ const generatorHtml = `
             const jsonStr = JSON.stringify(config);
             const base64Config = btoa(jsonStr);
 
-            // Remove protocolo para criar link stremio://
+            // Remove protocolo para stremio://
             const hostClean = host.replace('https://', '').replace('http://', '');
             const finalLink = \`stremio://\${hostClean}/stremio/wrap/\${base64Config}/manifest.json\`;
 
@@ -173,8 +223,11 @@ const generatorHtml = `
 
 app.get('/', (req, res) => res.send(generatorHtml));
 
-// Redireciona tudo para a home
-app.get('*', (req, res) => res.redirect('/'));
+// Redireciona rotas desconhecidas
+app.get('*', (req, res) => {
+    if (req.path === '/brazuca.json') return; // Não redireciona a rota do manifesto
+    res.redirect('/');
+});
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
