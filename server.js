@@ -7,11 +7,11 @@ const app = express();
 app.use(cors());
 
 // ============================================================
-// 1. MANIFESTO (v3.0.0 - Wrapper StremThru)
+// 1. MANIFESTO (v3.1.0 - Wrapper StremThru)
 // ============================================================
 const manifest = {
     id: 'community.brazuca.wrapper.multi',
-    version: '3.0.0',
+    version: '3.1.0',
     name: 'Brazuca Multi-Debrid',
     description: 'Brazuca envolvido pelo StremThru. Suporte simultâneo a RD e TorBox.',
     resources: ['stream'],
@@ -43,7 +43,6 @@ const configureHtml = `
         .card { background-color: #1e293b; border: 1px solid #334155; }
         .input-dark { background-color: #0f172a; border: 1px solid #334155; color: white; }
         .input-dark:focus { border-color: #3b82f6; outline: none; }
-        /* Checkbox customizado */
         .chk-group input:checked + div { border-color: #3b82f6; background-color: #1e3a8a; }
     </style>
 </head>
@@ -61,14 +60,18 @@ const configureHtml = `
             <div>
                 <label class="block text-xs font-bold text-gray-400 uppercase mb-2">Instância StremThru</label>
                 <select id="stremthru_host" class="w-full input-dark p-3 rounded-lg text-sm cursor-pointer">
-                    <option value="https://stremthru.13377001.xyz">Midnight (Recomendado)</option>
+                    <option value="https://stremthru.13377001.xyz">Midnight (Padrão)</option>
                     <option value="https://stremthru.elfhosted.com">ElfHosted</option>
                     <option value="https://api.stremthru.xyz">Oficial (Requer Store)</option>
                 </select>
-                <p class="text-xs text-gray-500 mt-1">Escolha o servidor que fará a ponte com o Debrid.</p>
+                <p class="text-xs text-gray-500 mt-1">O servidor que fará a ponte com o Debrid.</p>
             </div>
 
             <div class="border-t border-gray-700 my-4"></div>
+            
+            <div class="bg-blue-900/30 p-4 rounded-lg border border-blue-800 text-xs text-blue-200">
+                <strong>Nota:</strong> Use o <b>Token de Autorização</b> gerado no site do StremThru, não a chave direta do Real-Debrid.
+            </div>
 
             <!-- Real Debrid -->
             <label class="chk-group cursor-pointer block">
@@ -76,12 +79,15 @@ const configureHtml = `
                 <div class="p-4 rounded-lg border border-gray-700 transition-all hover:bg-slate-800">
                     <div class="flex items-center gap-3">
                         <span class="text-xl">🌍</span>
-                        <span class="font-bold">Ativar Real-Debrid</span>
+                        <div class="flex flex-col">
+                            <span class="font-bold">Real-Debrid</span>
+                            <span class="text-xs text-gray-400">Ativar na lista</span>
+                        </div>
                     </div>
                 </div>
             </label>
             <div id="rd_input_group" class="hidden mt-2 pl-4 border-l-2 border-blue-500">
-                <input type="text" id="rd_key" placeholder="Cole sua API Key do Real-Debrid" class="w-full input-dark p-3 rounded-lg text-sm">
+                <input type="text" id="rd_token" placeholder="Cole o Token StremThru para RD" class="w-full input-dark p-3 rounded-lg text-sm">
             </div>
 
             <!-- TorBox -->
@@ -90,12 +96,15 @@ const configureHtml = `
                 <div class="p-4 rounded-lg border border-gray-700 transition-all hover:bg-slate-800">
                     <div class="flex items-center gap-3">
                         <span class="text-xl">🟣</span>
-                        <span class="font-bold">Ativar TorBox</span>
+                        <div class="flex flex-col">
+                            <span class="font-bold">TorBox</span>
+                            <span class="text-xs text-gray-400">Ativar na lista</span>
+                        </div>
                     </div>
                 </div>
             </label>
             <div id="tb_input_group" class="hidden mt-2 pl-4 border-l-2 border-purple-500">
-                <input type="text" id="tb_key" placeholder="Cole sua API Key do TorBox" class="w-full input-dark p-3 rounded-lg text-sm">
+                <input type="text" id="tb_token" placeholder="Cole o Token StremThru para TB" class="w-full input-dark p-3 rounded-lg text-sm">
             </div>
 
             <!-- Botão Instalar -->
@@ -120,19 +129,19 @@ const configureHtml = `
         function validate() {
             const rd = document.getElementById('enable_rd').checked;
             const tb = document.getElementById('enable_tb').checked;
-            const rdKey = document.getElementById('rd_key').value.trim();
-            const tbKey = document.getElementById('tb_key').value.trim();
+            const rdT = document.getElementById('rd_token').value.trim();
+            const tbT = document.getElementById('tb_token').value.trim();
             const btn = document.getElementById('installBtn');
 
             // Lógica: Precisa ter pelo menos um selecionado E com a chave preenchida
             let valid = false;
             
-            if (rd && rdKey) valid = true;
-            if (tb && tbKey) valid = true;
+            if (rd && rdT) valid = true;
+            if (tb && tbT) valid = true;
             
             // Se marcou mas não preencheu, invalida
-            if (rd && !rdKey) valid = false;
-            if (tb && !tbKey) valid = false;
+            if (rd && !rdT) valid = false;
+            if (tb && !tbT) valid = false;
             
             // Se nenhum marcado, invalida
             if (!rd && !tb) valid = false;
@@ -144,21 +153,20 @@ const configureHtml = `
             }
         }
 
-        document.getElementById('rd_key').addEventListener('input', validate);
-        document.getElementById('tb_key').addEventListener('input', validate);
+        document.getElementById('rd_token').addEventListener('input', validate);
+        document.getElementById('tb_token').addEventListener('input', validate);
 
         function generateLink() {
             const rd = document.getElementById('enable_rd').checked;
             const tb = document.getElementById('enable_tb').checked;
             
             let host = document.getElementById('stremthru_host').value;
-            // Remove barra final se existir
-            host = host.replace(/\\/$/, '');
+            host = host.replace(/\\/$/, ''); // Remove barra final
 
             const config = {
                 host: host,
-                rd: rd ? document.getElementById('rd_key').value.trim() : null,
-                tb: tb ? document.getElementById('tb_key').value.trim() : null
+                rd: rd ? document.getElementById('rd_token').value.trim() : null,
+                tb: tb ? document.getElementById('tb_token').value.trim() : null
             };
 
             const json = JSON.stringify(config);
@@ -188,14 +196,13 @@ app.get('/:config/manifest.json', (req, res) => {
         const decoded = decodeURIComponent(req.params.config);
         const cfg = JSON.parse(Buffer.from(decoded, 'base64').toString());
         
-        // Personaliza o nome do addon no Stremio baseado na escolha
+        // Personaliza o nome do addon no Stremio
         let services = [];
         if (cfg.rd) services.push("RD");
         if (cfg.tb) services.push("TB");
         
         if (services.length > 0) {
             m.name = `Brazuca [${services.join('+')}]`;
-            // Remove a necessidade de configurar novamente no Stremio
             m.behaviorHints = { configurable: true, configurationRequired: false };
         }
     } catch (e) {}
@@ -230,10 +237,9 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 
     // 2. Processa e Duplica conforme a configuração
     const wrappedStreams = [];
-    const stremThruBase = cfg.host || 'https://stremthru.13377001.xyz';
+    const stremThruBase = (cfg.host || 'https://stremthru.13377001.xyz').replace(/\/$/, '');
 
     streams.forEach(stream => {
-        // Precisamos de um magnet ou infohash válido
         let magnet = stream.url;
         
         // Se o Brazuca mandar apenas infoHash, montamos o magnet
@@ -247,7 +253,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         // Limpa o título (Remove quebras de linha que o Brazuca às vezes tem)
         const cleanTitle = (stream.title || 'Unknown').replace(/\n/g, ' ').trim();
         
-        // Formata os detalhes extras (tamanho, seeds, etc se houver)
+        // Formata os detalhes extras
         let details = "";
         if (stream.behaviorHints && stream.behaviorHints.bingeGroup) {
             details += stream.behaviorHints.bingeGroup;
@@ -255,13 +261,10 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 
         // -- Lógica para Real-Debrid --
         if (cfg.rd) {
-            // URL padrão do StremThru para Real-Debrid
-            const finalUrl = `${stremThruBase}/v0/stream?link=${encodeURIComponent(magnet)}&authorization=${cfg.rd}`;
-            
             wrappedStreams.push({
                 name: `Brazuca [RD]`,
                 title: `${cleanTitle}\n⚙️ Real-Debrid via StremThru`,
-                url: finalUrl,
+                url: `${stremThruBase}/v0/stream?link=${encodeURIComponent(magnet)}&authorization=${cfg.rd}`,
                 behaviorHints: {
                     bingeGroup: `brazuca-rd-${stream.infoHash || 'grp'}`,
                     notWebReady: false 
@@ -271,13 +274,10 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 
         // -- Lógica para TorBox --
         if (cfg.tb) {
-            // URL padrão do StremThru para TorBox
-            const finalUrl = `${stremThruBase}/v0/stream?link=${encodeURIComponent(magnet)}&authorization=${cfg.tb}`;
-            
             wrappedStreams.push({
                 name: `Brazuca [TB]`,
                 title: `${cleanTitle}\n⚙️ TorBox via StremThru`,
-                url: finalUrl,
+                url: `${stremThruBase}/v0/stream?link=${encodeURIComponent(magnet)}&authorization=${cfg.tb}`,
                 behaviorHints: {
                     bingeGroup: `brazuca-tb-${stream.infoHash || 'grp'}`,
                     notWebReady: false 
