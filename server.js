@@ -8,44 +8,41 @@ app.use(cors());
 // ============================================================
 // CONFIGURAÇÕES DO ESPELHO
 // ============================================================
-// URL Base do Brazuca (sem /manifest.json no final)
 const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-const NEW_NAME = "Brazuca"; // Nome curto para aparecer na lista
-const NEW_LOGO = "https://i.imgur.com/Q61eP9V.png"; // Ícone novo
+const NEW_NAME = "Brazuca"; // Nome Curto
+const NEW_ID = "community.brazuca.proxy.v4"; // ID Único para forçar atualização
+const NEW_LOGO = "https://i.imgur.com/Q61eP9V.png";
 
 // ============================================================
-// ROTA 1: MANIFESTO EDITADO (O segredo do nome curto)
+// ROTA 1: MANIFESTO EDITADO (Nome Curto e Ícone)
 // ============================================================
 app.get('/addon/manifest.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-    // Cache curto para garantir que atualizações do Brazuca cheguem rápido
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
+    // Cache desativado para garantir que o nome atualize
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     
     try {
-        // 1. Baixa o manifesto original
         const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
         const manifest = response.data;
 
-        // 2. Edita os dados cosméticos
-        manifest.id = 'community.brazuca.proxy.renamed';
+        // Força a reescrita dos dados
+        manifest.id = NEW_ID;
         manifest.name = NEW_NAME;
-        manifest.description = "Brazuca (Wrapper StremThru)";
+        manifest.description = "Brazuca via StremThru";
         manifest.logo = NEW_LOGO;
+        manifest.version = "3.0.0"; // Versão fictícia alta
         
-        // 3. Retorna o JSON modificado
         res.json(manifest);
     } catch (error) {
-        console.error("Erro no upstream:", error.message);
-        res.status(500).json({ error: "Falha ao carregar manifesto original" });
+        console.error("Erro upstream:", error.message);
+        res.status(500).json({ error: "Erro no manifesto original" });
     }
 });
 
 // ============================================================
 // ROTA 2: REDIRECIONADOR DE RECURSOS
 // ============================================================
-// Redireciona streams, catálogos e metas para o original.
-// Isso evita erro 400/500 no StremThru.
 app.use('/addon', (req, res) => {
     const redirectUrl = `${UPSTREAM_BASE}${req.path}`;
     res.redirect(307, redirectUrl);
@@ -69,6 +66,8 @@ const generatorHtml = `
         .input-dark:focus { border-color: #3b82f6; outline: none; }
         .btn-action { background: linear-gradient(to right, #2563eb, #3b82f6); color: white; }
         .btn-action:hover { filter: brightness(1.1); }
+        a.link-ref { color: #60a5fa; text-decoration: none; font-size: 0.7rem; margin-top: 4px; display: inline-block; }
+        a.link-ref:hover { text-decoration: underline; }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
@@ -78,7 +77,7 @@ const generatorHtml = `
         <div class="text-center mb-6">
             <img src="${NEW_LOGO}" class="w-12 h-12 mx-auto mb-2 rounded-full border border-gray-700">
             <h1 class="text-xl font-bold text-white">Brazuca Wrapper</h1>
-            <p class="text-gray-500 text-xs">Gerador StremThru • Dual Debrid • Nome Curto</p>
+            <p class="text-gray-500 text-xs">Gerador StremThru Customizado</p>
         </div>
 
         <form class="space-y-5">
@@ -87,8 +86,8 @@ const generatorHtml = `
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">Instância StremThru</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthru.elfhosted.com">ElfHosted (Estável)</option>
-                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight (Weebs)</option>
+                    <option value="https://stremthru.elfhosted.com">ElfHosted</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
                     <option value="https://api.stremthru.xyz">StremThru Oficial</option>
                     <option value="custom">Outra...</option>
                 </select>
@@ -96,17 +95,31 @@ const generatorHtml = `
             </div>
 
             <!-- Debrids -->
-            <div class="space-y-3">
-                <label class="text-xs font-bold text-gray-500 uppercase ml-1">Tokens (Store StremThru)</label>
+            <div class="space-y-4">
+                <label class="text-xs font-bold text-gray-500 uppercase ml-1">Serviços (Tokens StremThru)</label>
                 
-                <div class="flex items-center gap-2 bg-[#1a1a1a] p-2 rounded border border-gray-800">
-                    <input type="checkbox" id="use_rd" class="accent-blue-600 w-4 h-4" onchange="validate()">
-                    <input type="text" id="rd_key" placeholder="Token Real-Debrid" class="w-full input-dark p-2 rounded text-xs bg-transparent border-none focus:ring-0" disabled>
+                <!-- Real Debrid -->
+                <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800">
+                    <div class="flex items-center gap-2 mb-1">
+                        <input type="checkbox" id="use_rd" class="accent-blue-600 w-4 h-4" onchange="validate()">
+                        <span class="text-sm font-bold text-gray-300">Real-Debrid</span>
+                    </div>
+                    <input type="text" id="rd_key" placeholder="Cole o Token da Store 'rd'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-blue-500 focus:bg-black transition-colors" disabled>
+                    <div class="text-right">
+                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="link-ref">Assinar Real-Debrid ↗</a>
+                    </div>
                 </div>
 
-                <div class="flex items-center gap-2 bg-[#1a1a1a] p-2 rounded border border-gray-800">
-                    <input type="checkbox" id="use_tb" class="accent-purple-600 w-4 h-4" onchange="validate()">
-                    <input type="text" id="tb_key" placeholder="Token TorBox" class="w-full input-dark p-2 rounded text-xs bg-transparent border-none focus:ring-0" disabled>
+                <!-- TorBox -->
+                <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800">
+                    <div class="flex items-center gap-2 mb-1">
+                        <input type="checkbox" id="use_tb" class="accent-purple-600 w-4 h-4" onchange="validate()">
+                        <span class="text-sm font-bold text-gray-300">TorBox</span>
+                    </div>
+                    <input type="text" id="tb_key" placeholder="Cole o Token da Store 'tb'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-purple-500 focus:bg-black transition-colors" disabled>
+                    <div class="text-right">
+                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="link-ref text-purple-400">Assinar TorBox ↗</a>
+                    </div>
                 </div>
             </div>
 
@@ -151,7 +164,6 @@ const generatorHtml = `
             if(!rd) rdInput.value = '';
             if(!tb) tbInput.value = '';
             
-            // Visual disabled
             rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
             tbInput.parentElement.style.opacity = tb ? '1' : '0.5';
 
@@ -177,27 +189,23 @@ const generatorHtml = `
             let host = instanceSelect.value === 'custom' ? customInput.value.trim() : instanceSelect.value;
             host = host.replace(/\\/$/, '').replace('http:', 'https:');
 
-            // --- PULO DO GATO ---
-            // Aponta para o NOSSO espelho (/addon/manifest.json)
-            // Assim o StremThru lê o nome curto "Brazuca"
+            // Aponta para o nosso espelho local para pegar o nome curto
             const myMirrorUrl = window.location.origin + "/addon/manifest.json";
 
             let config = { upstreams: [], stores: [] };
 
-            // Configura Real-Debrid
             if (document.getElementById('use_rd').checked) {
                 config.upstreams.push({ u: myMirrorUrl });
                 config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
             }
-            
-            // Configura TorBox
             if (document.getElementById('use_tb').checked) {
                 config.upstreams.push({ u: myMirrorUrl });
                 config.stores.push({ c: "tb", t: document.getElementById('tb_key').value.trim() });
             }
 
             const b64 = btoa(JSON.stringify(config));
-            // Limpa protocolo para criar stremio://
+            
+            // Remove protocolo HTTP/HTTPS para criar protocolo stremio://
             const hostClean = host.replace(/^https?:\\/\\//, '');
             
             const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
