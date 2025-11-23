@@ -10,28 +10,31 @@ app.use(cors());
 // ============================================================
 const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
 const NEW_NAME = "Brazuca"; // Nome Curto
-const NEW_ID = "community.brazuca.proxy.v4"; // ID Único para forçar atualização
+const NEW_ID = "community.brazuca.proxy.v5"; // ID novo para forçar refresh no Stremio
 const NEW_LOGO = "https://i.imgur.com/Q61eP9V.png";
 
 // ============================================================
-// ROTA 1: MANIFESTO EDITADO (Nome Curto e Ícone)
+// ROTA 1: MANIFESTO EDITADO (Renomeia o Addon)
 // ============================================================
 app.get('/addon/manifest.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-    // Cache desativado para garantir que o nome atualize
+    // Desativa cache para garantir que o Stremio pegue o novo nome/ID
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     
     try {
+        // Baixa o manifesto original
         const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
         const manifest = response.data;
 
-        // Força a reescrita dos dados
+        // Reescreve metadados
         manifest.id = NEW_ID;
         manifest.name = NEW_NAME;
         manifest.description = "Brazuca via StremThru";
         manifest.logo = NEW_LOGO;
-        manifest.version = "3.0.0"; // Versão fictícia alta
+        manifest.version = "3.0.5"; // Versão incrementada
         
         res.json(manifest);
     } catch (error) {
@@ -43,6 +46,7 @@ app.get('/addon/manifest.json', async (req, res) => {
 // ============================================================
 // ROTA 2: REDIRECIONADOR DE RECURSOS
 // ============================================================
+// Redireciona streams e catálogos para o original
 app.use('/addon', (req, res) => {
     const redirectUrl = `${UPSTREAM_BASE}${req.path}`;
     res.redirect(307, redirectUrl);
@@ -86,8 +90,8 @@ const generatorHtml = `
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">Instância StremThru</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthru.elfhosted.com">ElfHosted</option>
                     <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
+                    <option value="https://stremthru.elfhosted.com">ElfHosted</option>
                     <option value="https://api.stremthru.xyz">StremThru Oficial</option>
                     <option value="custom">Outra...</option>
                 </select>
@@ -189,7 +193,7 @@ const generatorHtml = `
             let host = instanceSelect.value === 'custom' ? customInput.value.trim() : instanceSelect.value;
             host = host.replace(/\\/$/, '').replace('http:', 'https:');
 
-            // Aponta para o nosso espelho local para pegar o nome curto
+            // Usamos o NOSSO espelho (/addon/manifest.json)
             const myMirrorUrl = window.location.origin + "/addon/manifest.json";
 
             let config = { upstreams: [], stores: [] };
@@ -205,7 +209,6 @@ const generatorHtml = `
 
             const b64 = btoa(JSON.stringify(config));
             
-            // Remove protocolo HTTP/HTTPS para criar protocolo stremio://
             const hostClean = host.replace(/^https?:\\/\\//, '');
             
             const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
