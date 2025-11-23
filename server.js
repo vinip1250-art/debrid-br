@@ -88,9 +88,9 @@ const generatorHtml = `
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">Instância StremThru</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight</option>
                     <option value="https://stremthru.elfhosted.com">ElfHosted</option>
-                    <option value="https://stremthru.13377001.xyz/">StremThru Oficial</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
+                    <option value="https://api.stremthru.xyz">StremThru Oficial</option>
                     <option value="custom">Outra...</option>
                 </select>
                 <input type="text" id="custom_instance" placeholder="https://..." class="hidden w-full input-dark p-3 rounded-lg text-sm mt-2">
