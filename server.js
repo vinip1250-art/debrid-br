@@ -9,8 +9,8 @@ app.use(cors());
 // CONFIGURAÇÕES DO ESPELHO
 // ============================================================
 const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-const NEW_NAME = "Brazuca"; // Nome Curto
-const NEW_ID = "community.brazuca.proxy.v5"; // ID novo para forçar refresh no Stremio
+const NEW_NAME = "Brazuca"; 
+const NEW_ID = "community.brazuca.proxy.v6"; // ID Novo para forçar atualização
 const NEW_LOGO = "https://i.imgur.com/Q61eP9V.png";
 
 // ============================================================
@@ -19,13 +19,12 @@ const NEW_LOGO = "https://i.imgur.com/Q61eP9V.png";
 app.get('/addon/manifest.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-    // Desativa cache para garantir que o Stremio pegue o novo nome/ID
+    // Cabeçalhos agressivos para evitar cache antigo
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
     
     try {
-        // Baixa o manifesto original
         const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
         const manifest = response.data;
 
@@ -34,7 +33,7 @@ app.get('/addon/manifest.json', async (req, res) => {
         manifest.name = NEW_NAME;
         manifest.description = "Brazuca via StremThru";
         manifest.logo = NEW_LOGO;
-        manifest.version = "3.0.5"; // Versão incrementada
+        manifest.version = "3.1.0"; 
         
         res.json(manifest);
     } catch (error) {
@@ -46,7 +45,6 @@ app.get('/addon/manifest.json', async (req, res) => {
 // ============================================================
 // ROTA 2: REDIRECIONADOR DE RECURSOS
 // ============================================================
-// Redireciona streams e catálogos para o original
 app.use('/addon', (req, res) => {
     const redirectUrl = `${UPSTREAM_BASE}${req.path}`;
     res.redirect(307, redirectUrl);
@@ -70,8 +68,8 @@ const generatorHtml = `
         .input-dark:focus { border-color: #3b82f6; outline: none; }
         .btn-action { background: linear-gradient(to right, #2563eb, #3b82f6); color: white; }
         .btn-action:hover { filter: brightness(1.1); }
-        a.link-ref { color: #60a5fa; text-decoration: none; font-size: 0.7rem; margin-top: 4px; display: inline-block; }
-        a.link-ref:hover { text-decoration: underline; }
+        a.link-ref { color: #60a5fa; text-decoration: none; font-size: 0.75rem; margin-top: 6px; display: inline-block; }
+        a.link-ref:hover { text-decoration: underline; color: #93c5fd; }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
@@ -81,7 +79,7 @@ const generatorHtml = `
         <div class="text-center mb-6">
             <img src="${NEW_LOGO}" class="w-12 h-12 mx-auto mb-2 rounded-full border border-gray-700">
             <h1 class="text-xl font-bold text-white">Brazuca Wrapper</h1>
-            <p class="text-gray-500 text-xs">Gerador StremThru Customizado</p>
+            <p class="text-gray-500 text-xs">Gerador StremThru Customizado v3.1</p>
         </div>
 
         <form class="space-y-5">
@@ -90,8 +88,8 @@ const generatorHtml = `
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">Instância StremThru</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
                     <option value="https://stremthru.elfhosted.com">ElfHosted</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
                     <option value="https://api.stremthru.xyz">StremThru Oficial</option>
                     <option value="custom">Outra...</option>
                 </select>
@@ -110,7 +108,7 @@ const generatorHtml = `
                     </div>
                     <input type="text" id="rd_key" placeholder="Cole o Token da Store 'rd'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-blue-500 focus:bg-black transition-colors" disabled>
                     <div class="text-right">
-                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="link-ref">Assinar Real-Debrid ↗</a>
+                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="link-ref">💎 Assinar Real-Debrid</a>
                     </div>
                 </div>
 
@@ -122,7 +120,7 @@ const generatorHtml = `
                     </div>
                     <input type="text" id="tb_key" placeholder="Cole o Token da Store 'tb'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-purple-500 focus:bg-black transition-colors" disabled>
                     <div class="text-right">
-                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="link-ref text-purple-400">Assinar TorBox ↗</a>
+                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="link-ref text-purple-400">⚡ Assinar TorBox</a>
                     </div>
                 </div>
             </div>
@@ -193,8 +191,9 @@ const generatorHtml = `
             let host = instanceSelect.value === 'custom' ? customInput.value.trim() : instanceSelect.value;
             host = host.replace(/\\/$/, '').replace('http:', 'https:');
 
-            // Usamos o NOSSO espelho (/addon/manifest.json)
-            const myMirrorUrl = window.location.origin + "/addon/manifest.json";
+            // Adicionamos um timestamp para quebrar o cache do navegador/stremio
+            const cacheBuster = "?t=" + Date.now();
+            const myMirrorUrl = window.location.origin + "/addon/manifest.json" + cacheBuster;
 
             let config = { upstreams: [], stores: [] };
 
@@ -208,7 +207,6 @@ const generatorHtml = `
             }
 
             const b64 = btoa(JSON.stringify(config));
-            
             const hostClean = host.replace(/^https?:\\/\\//, '');
             
             const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
