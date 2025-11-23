@@ -1,7 +1,7 @@
 {
   "name": "brazuca-wrapper-stremthru",
-  "version": "3.0.0",
-  "description": "Wrapper do Brazuca com suporte Dual-Debrid via StremThru",
+  "version": "3.1.0",
+  "description": "Wrapper Brazuca Dual-Debrid via StremThru",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
