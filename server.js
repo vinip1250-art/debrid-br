@@ -11,7 +11,7 @@ app.use(cors());
 const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
 const DEFAULT_NAME = "Brazuca"; 
 const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
-const PROJECT_VERSION = "1.0.0"; // Versão do seu Addon
+const PROJECT_VERSION = "1.0.0"; 
 
 // ============================================================
 // 2. ROTA DO MANIFESTO (Proxy para Renomear/Trocar Ícone)
@@ -38,9 +38,9 @@ app.get('/addon/manifest.json', async (req, res) => {
         manifest.name = customName;
         manifest.description = "Filmes e Séries Brasileiros via StremThru";
         manifest.logo = customLogo;
-        manifest.version = PROJECT_VERSION; // Define a versão explicitamente
+        manifest.version = PROJECT_VERSION; 
         
-        delete manifest.background; // Remove background para limpar
+        delete manifest.background; // Remove background para limpar visual
         
         res.json(manifest);
     } catch (error) {
@@ -194,7 +194,7 @@ const generatorHtml = `
                 </div>
                 
                 <a id="installBtn" href="#" class="block w-full btn-action py-3.5 rounded-xl text-center font-bold text-sm uppercase tracking-widest shadow-lg">
-                    INSTALAR
+                    INSTALAR AGORA
                 </a>
             </div>
 
@@ -208,10 +208,6 @@ const generatorHtml = `
     <script>
         const instanceSelect = document.getElementById('instance');
         const customInput = document.getElementById('custom_instance');
-
-        instanceSelect.addEventListener('change', (e) => {
-            customInput.classList.toggle('hidden', e.target.value !== 'custom');
-        });
 
         function updatePreview() {
             const url = document.getElementById('custom_logo').value.trim();
@@ -254,8 +250,9 @@ const generatorHtml = `
         document.getElementById('tb_key').addEventListener('input', validate);
 
         function generate() {
-            let host = instanceSelect.value === 'custom' ? customInput.value.trim() : instanceSelect.value;
+            let host = instanceSelect.value;
             host = host.replace(/\\/$/, '').replace('http:', 'https:');
+            if (!host.startsWith('http')) host = 'https://' + host;
 
             // 1. Personalização
             const cName = document.getElementById('custom_name').value.trim();
@@ -265,7 +262,8 @@ const generatorHtml = `
             if(cLogo) proxyParams += \`&logo=\${encodeURIComponent(cLogo)}\`;
 
             // Nossa URL de Proxy (que serve o manifesto editado)
-            const myMirrorUrl = window.location.origin + "/addon/manifest.json" + proxyParams;
+            // Adiciona timestamp para evitar cache
+            const myMirrorUrl = window.location.origin + "/addon/manifest.json" + proxyParams + "&t=" + Date.now();
 
             // 2. Montar Upstreams
             let config = { upstreams: [], stores: [] };
@@ -307,3 +305,22 @@ const generatorHtml = `
     </script>
 </body>
 </html>
+`;
+
+app.get('/', (req, res) => res.send(generatorHtml));
+
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/addon')) return res.status(404).send('Not Found');
+    res.redirect('/');
+});
+
+const PORT = process.env.PORT || 7000;
+
+// Adaptação para Vercel Serverless (se necessário)
+if (process.env.VERCEL) {
+    module.exports = app;
+} else {
+    app.listen(PORT, () => {
+        console.log(`Gerador rodando na porta ${PORT}`);
+    });
+}
