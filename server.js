@@ -10,9 +10,9 @@ app.use(cors());
 // 1. MANIFESTO (Nome Limpo: "Brazuca")
 // ============================================================
 const manifest = {
-    id: 'community.brazuca.pro.direct',
-    version: '5.0.0',
-    name: 'Brazuca', // Nome limpo como solicitado
+    id: 'community.brazuca.pro.direct.v5',
+    version: '5.0.1',
+    name: 'Brazuca', // Nome curto e limpo
     description: 'Filmes e Séries Brasileiros (Real-Debrid & TorBox)',
     resources: ['stream'],
     types: ['movie', 'series'],
@@ -27,7 +27,7 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-// Vídeo curto para evitar erro ao iniciar download
+// Vídeo de aviso para evitar erro de reprodução quando o download inicia
 const DOWNLOAD_NOTIFY_VIDEO = "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"; 
 
 const TRACKERS = [
@@ -37,7 +37,7 @@ const TRACKERS = [
 ];
 
 // ============================================================
-// 2. FUNÇÕES DE DEBRID (Refinadas)
+// 2. FUNÇÕES DE DEBRID (Lógica Direta v5)
 // ============================================================
 
 // --- REAL-DEBRID ---
@@ -52,7 +52,7 @@ async function resolveRealDebrid(infoHash, apiKey) {
         });
         const torrentId = addResp.data.id;
 
-        // 2. Selecionar (Wait Loop)
+        // 2. Loop de Espera (Polling)
         const infoUrl = `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`;
         let attempts = 0;
         while (attempts < 5) {
@@ -75,7 +75,7 @@ async function resolveRealDebrid(infoHash, apiKey) {
             });
             return unrestrictResp.data.download;
         }
-        return null; // Download started
+        return null;
     } catch (e) { return null; }
 }
 
@@ -86,62 +86,42 @@ async function checkRealDebridCache(hashes, apiKey) {
         const url = `https://api.real-debrid.com/rest/1.0/torrents/instantAvailability/${validHashes.join('/')}`;
         const resp = await axios.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
         const results = {};
-        
         for (const h of validHashes) {
-            // Busca case-insensitive
             const key = Object.keys(resp.data).find(k => k.toLowerCase() === h.toLowerCase());
             const data = key ? resp.data[key] : null;
-            
-            if (data && data.rd && Array.isArray(data.rd) && data.rd.length > 0) {
-                results[h] = true;
-            } else {
-                results[h] = false;
-            }
+            if (data && data.rd && Array.isArray(data.rd) && data.rd.length > 0) results[h] = true;
+            else results[h] = false;
         }
         return results;
     } catch (e) { return {}; }
 }
 
-// --- TORBOX (Fix API v1) ---
+// --- TORBOX ---
 async function resolveTorBox(infoHash, apiKey) {
     try {
-        // Magnet Limpo (Sem trackers para evitar erro de parser do TorBox)
         const magnet = `magnet:?xt=urn:btih:${infoHash}`;
-        
-        // 1. Create
         const createUrl = 'https://api.torbox.app/v1/api/torrents/create';
-        // TorBox prefere x-www-form-urlencoded ou multipart
         const params = new URLSearchParams();
         params.append('magnet', magnet);
         params.append('seed', '1');
         
-        const createResp = await axios.post(createUrl, params, {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
-        });
-        
+        const createResp = await axios.post(createUrl, params, { headers: { 'Authorization': `Bearer ${apiKey}` } });
         const torrentId = createResp.data.data.torrent_id;
         
-        // 2. Get Link (Retry logic)
-        await new Promise(r => setTimeout(r, 1000)); // Delay inicial
+        await new Promise(r => setTimeout(r, 1000));
         
         const listUrl = `https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true&id=${torrentId}`;
         const listResp = await axios.get(listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
         const data = listResp.data.data;
         
         if (data && data.files && data.files.length > 0) {
-            // Pega o maior arquivo
             const file = data.files.reduce((prev, curr) => (prev.size > curr.size) ? prev : curr);
-            
             const reqUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${apiKey}&torrent_id=${torrentId}&file_id=${file.id}&zip_link=false`;
             const reqResp = await axios.get(reqUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-            
             if (reqResp.data.success) return reqResp.data.data;
         }
-        return null; // Download started
-    } catch (e) { 
-        console.error("Torbox Error:", e.message);
-        return null; 
-    }
+        return null;
+    } catch (e) { return null; }
 }
 
 async function checkTorBoxCache(hashes, apiKey) {
@@ -152,19 +132,15 @@ async function checkTorBoxCache(hashes, apiKey) {
         const resp = await axios.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
         const results = {};
         hashes.forEach(h => results[h] = false);
-        
-        const data = resp.data.data; // Lista de hashes encontrados
-        if (Array.isArray(data)) {
-            data.forEach(h => { if(h) results[h.toLowerCase()] = true; });
-        } else if (typeof data === 'object') {
-            Object.keys(data).forEach(k => { if(data[k]) results[k.toLowerCase()] = true; });
-        }
+        const data = resp.data.data;
+        if (Array.isArray(data)) data.forEach(h => { if(h) results[h.toLowerCase()] = true; });
+        else if (typeof data === 'object') Object.keys(data).forEach(k => { if(data[k]) results[k.toLowerCase()] = true; });
         return results;
     } catch (e) { return {}; }
 }
 
 // ============================================================
-// 3. HTML CONFIG
+// 3. HTML CONFIG (LAYOUT ANTERIOR RESTAURADO)
 // ============================================================
 const configureHtml = `
 <!DOCTYPE html>
@@ -174,64 +150,123 @@ const configureHtml = `
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Brazuca Config</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>body{background:#050505;color:#fff}.sel{border:2px solid #3b82f6;background:#1a1a1a}</style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #0b0c10; color: #c5c6c7; font-family: 'Segoe UI', sans-serif; }
+        .card { background-color: #1f2833; border: 1px solid #45a29e; box-shadow: 0 0 15px rgba(102, 252, 241, 0.1); }
+        .input-dark { background-color: #0b0c10; border: 1px solid #45a29e; color: #fff; transition: all 0.3s; }
+        .input-dark:focus { box-shadow: 0 0 8px #66fcf1; outline: none; }
+        .btn-action { background: linear-gradient(90deg, #45a29e 0%, #66fcf1 100%); color: #0b0c10; font-weight: bold; }
+        .btn-action:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 252, 241, 0.4); }
+        a.link-ref { color: #45a29e; font-size: 0.7rem; text-decoration: none; margin-top: 5px; display: inline-block; }
+        a.link-ref:hover { text-decoration: underline; color: #66fcf1; }
+    </style>
 </head>
-<body class="flex items-center justify-center min-h-screen p-4">
-    <div class="w-full max-w-md bg-gray-900 rounded-xl p-6 border border-gray-800 shadow-2xl">
-        <div class="text-center mb-6">
-            <h1 class="text-2xl font-bold text-blue-500">BRAZUCA</h1>
-            <p class="text-xs text-gray-500">Configuração Direta</p>
+<body class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-black to-gray-900">
+
+    <div class="w-full max-w-lg card rounded-2xl p-8 relative overflow-hidden">
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-teal-400 to-green-500"></div>
+
+        <div class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2">Brazuca <span class="text-white">Direct</span></h1>
+            <p class="text-gray-400 text-xs">Integração Direta (Nome Limpo)</p>
         </div>
-        
-        <div class="space-y-4">
-            <div>
-                <label class="text-xs font-bold text-gray-400 uppercase">Serviço</label>
-                <div class="grid grid-cols-2 gap-3 mt-1">
-                    <button onclick="setSvc('realdebrid')" id="btn-realdebrid" class="p-3 rounded border border-gray-700 hover:bg-gray-800 text-sm transition">🌍 Real-Debrid</button>
-                    <button onclick="setSvc('torbox')" id="btn-torbox" class="p-3 rounded border border-gray-700 hover:bg-gray-800 text-sm transition">🟣 TorBox</button>
+
+        <form id="configForm" class="space-y-6">
+            
+            <!-- Real Debrid -->
+            <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-blue-500 transition-colors">
+                <label class="flex items-center gap-3 cursor-pointer mb-3">
+                    <input type="checkbox" id="use_rd" class="w-5 h-5 accent-[#66fcf1]" onchange="validate()">
+                    <span class="text-lg font-bold text-white">Real-Debrid</span>
+                </label>
+                <input type="text" id="rd_key" placeholder="Cole sua API Key do Real-Debrid" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600" disabled>
+                <div class="text-right">
+                    <a href="http://real-debrid.com/?id=6684575" target="_blank" class="link-ref">💎 Assinar Real-Debrid</a>
                 </div>
             </div>
 
-            <div>
-                <label class="text-xs font-bold text-gray-400 uppercase">API Key</label>
-                <input id="key" type="text" placeholder="Cole sua chave..." class="w-full p-3 mt-1 bg-black border border-gray-700 rounded text-sm focus:border-blue-500 outline-none">
+            <!-- TorBox -->
+            <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-purple-500 transition-colors">
+                <label class="flex items-center gap-3 cursor-pointer mb-3">
+                    <input type="checkbox" id="use_tb" class="w-5 h-5 accent-[#66fcf1]" onchange="validate()">
+                    <span class="text-lg font-bold text-white">TorBox</span>
+                </label>
+                <input type="text" id="tb_key" placeholder="Cole sua API Key do TorBox" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600" disabled>
+                <div class="text-right">
+                    <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="link-ref text-purple-400">⚡ Assinar TorBox</a>
+                </div>
             </div>
 
-            <a id="install" href="#" class="block w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded text-center mt-4 opacity-50 pointer-events-none transition">
-                INSTALAR
+            <!-- Botão -->
+            <a id="installBtn" href="#" class="block w-full btn-action py-4 rounded-xl text-lg uppercase tracking-widest text-center transition-all opacity-50 pointer-events-none shadow-lg">
+                INSTALAR NO STREMIO
             </a>
-        </div>
+
+        </form>
     </div>
+
     <script>
-        let cfg = { s: '', k: '' };
-        function setSvc(s) {
-            cfg.s = s;
-            document.querySelectorAll('button').forEach(b => b.classList.remove('sel'));
-            document.getElementById('btn-'+s).classList.add('sel');
-            upd();
-        }
-        function upd() {
-            cfg.k = document.getElementById('key').value.trim();
-            const btn = document.getElementById('install');
-            if(cfg.s && cfg.k) {
+        function validate() {
+            const rd = document.getElementById('use_rd').checked;
+            const tb = document.getElementById('use_tb').checked;
+            const rdKey = document.getElementById('rd_key');
+            const tbKey = document.getElementById('tb_key');
+            const btn = document.getElementById('installBtn');
+
+            rdKey.disabled = !rd;
+            tbKey.disabled = !tb;
+            
+            if(!rd) rdKey.value = '';
+            if(!tb) tbKey.value = '';
+            
+            rdKey.parentElement.style.opacity = rd ? '1' : '0.6';
+            tbKey.parentElement.style.opacity = tb ? '1' : '0.6';
+
+            // Verifica se tem chave preenchida
+            const hasRd = rd && rdKey.value.trim().length > 5;
+            const hasTb = tb && tbKey.value.trim().length > 5;
+
+            if (hasRd || hasTb) {
                 btn.classList.remove('opacity-50', 'pointer-events-none');
-                const b64 = btoa(JSON.stringify(cfg));
-                btn.href = 'stremio://' + window.location.host + '/' + encodeURIComponent(b64) + '/manifest.json';
+                generateLink();
             } else {
                 btn.classList.add('opacity-50', 'pointer-events-none');
             }
         }
-        document.getElementById('key').addEventListener('input', upd);
+
+        document.getElementById('rd_key').addEventListener('input', validate);
+        document.getElementById('tb_key').addEventListener('input', validate);
+
+        function generateLink() {
+            const rd = document.getElementById('use_rd').checked;
+            const tb = document.getElementById('use_tb').checked;
+            
+            // Determina qual serviço principal usar na config (ou ambos se tivesse suporte a array, mas aqui usamos objeto simples)
+            // No modo direto, o addon backend decide baseado no que está presente.
+            const config = {
+                s: rd ? 'realdebrid' : (tb ? 'torbox' : ''), // Fallback visual
+                k: rd ? document.getElementById('rd_key').value.trim() : document.getElementById('tb_key').value.trim(),
+                // Passamos chaves duplas se existirem
+                rd: rd ? document.getElementById('rd_key').value.trim() : null,
+                tb: tb ? document.getElementById('tb_key').value.trim() : null
+            };
+
+            const b64 = btoa(JSON.stringify(config));
+            const encoded = encodeURIComponent(b64);
+            
+            document.getElementById('installBtn').href = 'stremio://' + window.location.host + '/' + encoded + '/manifest.json';
+        }
     </script>
 </body>
 </html>
 `;
 
 // ============================================================
-// 4. ROTAS
+// 4. ROTAS (Lógica v5)
 // ============================================================
 
-app.get('/', (req, res) => res.redirect('/configure'));
+app.get('/', (req, res) => res.send(configureHtml));
 app.get('/configure', (req, res) => res.send(configureHtml));
 
 app.get('/:config/manifest.json', (req, res) => {
@@ -241,7 +276,6 @@ app.get('/:config/manifest.json', (req, res) => {
     res.json(m);
 });
 
-// STREAM HANDLER
 app.get('/:config/stream/:type/:id.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     
@@ -249,9 +283,13 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     try { cfg = JSON.parse(Buffer.from(decodeURIComponent(req.params.config), 'base64').toString()); } 
     catch(e) { return res.json({ streams: [] }); }
 
-    if (!cfg.k) return res.json({ streams: [{ title: '⚠ Configure o Addon' }] });
+    // Suporte a chaves duplas ou simples
+    const rdKey = cfg.rd || (cfg.s === 'realdebrid' ? cfg.k : null);
+    const tbKey = cfg.tb || (cfg.s === 'torbox' ? cfg.k : null);
 
-    // 1. Buscar no Brazuca
+    if (!rdKey && !tbKey) return res.json({ streams: [{ title: '⚠ Configure o Addon' }] });
+
+    // 1. Buscar Brazuca
     let streams = [];
     try {
         const resp = await axios.get(`${BRAZUCA_UPSTREAM}/stream/${req.params.type}/${req.params.id}.json`, { timeout: 6000 });
@@ -271,55 +309,66 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         if (h) { s.infoHash = h.toLowerCase(); if(!hashList.includes(s.infoHash)) hashList.push(s.infoHash); }
     });
 
-    let cache = {};
+    let rdCache = {}, tbCache = {};
     if (hashList.length > 0) {
-        if (cfg.s === 'realdebrid') cache = await checkRealDebridCache(hashList, cfg.k);
-        else if (cfg.s === 'torbox') cache = await checkTorBoxCache(hashList, cfg.k);
+        if (rdKey) rdCache = await checkRealDebridCache(hashList, rdKey);
+        if (tbKey) tbCache = await checkTorBoxCache(hashList, tbKey);
     }
 
-    // 3. Gerar Resposta
-    const finalStreams = streams.map(s => {
-        const h = s.infoHash;
-        if (!h) return null;
+    // 3. Gerar Lista
+    const finalStreams = [];
 
-        const isCached = cache[h] === true;
-        const icon = isCached ? '⚡' : '📥';
-        const state = isCached ? 'INSTANT' : 'DOWNLOAD (Cloud)';
+    streams.forEach(s => {
+        const h = s.infoHash;
+        if (!h) return;
+
         const cleanTitle = (s.title || 'video').replace(/\n/g, ' ').replace(/\[.*?\]/g, '').trim();
 
-        const resolveUrl = `${req.protocol}://${req.get('host')}/resolve/${encodeURIComponent(cfg.s)}/${encodeURIComponent(cfg.k)}/${h}`;
+        // Item Real-Debrid
+        if (rdKey) {
+            const isCached = rdCache[h] === true;
+            const icon = isCached ? '⚡' : '📥';
+            const state = isCached ? 'INSTANT' : 'DOWNLOAD';
+            
+            finalStreams.push({
+                name: 'Brazuca [RD]',
+                title: `${icon} ${cleanTitle}\n${state}`,
+                url: `${req.protocol}://${req.get('host')}/resolve/realdebrid/${encodeURIComponent(rdKey)}/${h}`,
+                behaviorHints: { notWebReady: !isCached }
+            });
+        }
 
-        return {
-            name: `BR ${cfg.s === 'realdebrid' ? 'RD' : 'TB'}`,
-            title: `${icon} ${cleanTitle}\n${state}`,
-            url: resolveUrl,
-            behaviorHints: { notWebReady: !isCached }
-        };
-    }).filter(Boolean);
+        // Item TorBox
+        if (tbKey) {
+            const isCached = tbCache[h] === true;
+            const icon = isCached ? '⚡' : '📥';
+            const state = isCached ? 'INSTANT' : 'DOWNLOAD';
 
-    // Ordenar (Cached primeiro)
+            finalStreams.push({
+                name: 'Brazuca [TB]',
+                title: `${icon} ${cleanTitle}\n${state}`,
+                url: `${req.protocol}://${req.get('host')}/resolve/torbox/${encodeURIComponent(tbKey)}/${h}`,
+                behaviorHints: { notWebReady: !isCached }
+            });
+        }
+    });
+
     finalStreams.sort((a, b) => b.title.includes('⚡') - a.title.includes('⚡'));
     res.json({ streams: finalStreams });
 });
 
-// RESOLVE HANDLER (Play/Download)
 app.get('/resolve/:service/:key/:hash', async (req, res) => {
     const { service, key, hash } = req.params;
-    
     let directLink = null;
+    
     if (service === 'realdebrid') directLink = await resolveRealDebrid(hash, key);
     else if (service === 'torbox') directLink = await resolveTorBox(hash, key);
 
-    if (directLink) {
-        res.redirect(directLink);
-    } else {
-        // Se não tem link direto, redireciona para um vídeo de aviso
-        // Isso evita o erro "ERR_OPENING_MEDIA" no Stremio
-        res.redirect(DOWNLOAD_NOTIFY_VIDEO);
-    }
+    if (directLink) res.redirect(directLink);
+    else res.redirect(DOWNLOAD_NOTIFY_VIDEO);
 });
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-    console.log(`Addon rodando na porta ${PORT}`);
+    console.log(`Brazuca Direct v5 rodando na porta ${PORT}`);
 });
