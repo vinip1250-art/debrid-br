@@ -6,56 +6,59 @@ const app = express();
 app.use(cors());
 
 // ============================================================
-// 1. CONFIGURAÇÕES E FONTES
+// 1. CONFIGURAÇÕES
 // ============================================================
-const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-const COMET_BASE = "https://cometfortheweebs.midnightignite.me/manifest.json";
-
-// Identidade Visual
-const NEW_NAME = "Brazuca"; 
-const NEW_LOGO = "https://i.imgur.com/KVpfrAk.png";
+const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
+const DEFAULT_NAME = "Brazuca"; 
+const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
+const PROJECT_VERSION = "1.0.0"; // Versão do seu Addon
 
 // ============================================================
-// 2. ROTA DO MANIFESTO DINÂMICO (Customização)
+// 2. ROTA DO MANIFESTO (Proxy para Renomear/Trocar Ícone)
 // ============================================================
 app.get('/addon/manifest.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 'public, max-age=60'); 
+    res.setHeader('Cache-Control', 'public, max-age=60'); // Cache curto
     
     try {
-        // Captura nome/logo da URL ou usa padrão
-        const customName = req.query.name || NEW_NAME;
-        const customLogo = req.query.logo || NEW_LOGO;
+        // Captura personalização da URL (query params)
+        const customName = req.query.name || DEFAULT_NAME;
+        const customLogo = req.query.logo || DEFAULT_LOGO;
         
-        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
+        // 1. Baixa o manifesto original
+        const response = await axios.get(`${BRAZUCA_UPSTREAM}/manifest.json`);
         const manifest = response.data;
 
-        // ID único baseado no nome
-        const idSuffix = Buffer.from(customName).toString('hex').substring(0, 8);
+        // 2. Gera ID único baseado no nome (para o Stremio não confundir)
+        const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
         
+        // 3. Aplica as mudanças visuais
         manifest.id = `community.brazuca.wrapper.${idSuffix}`;
         manifest.name = customName;
-        manifest.description = "Filmes e Séries (Multi-Source)";
+        manifest.description = "Filmes e Séries Brasileiros via StremThru";
         manifest.logo = customLogo;
+        manifest.version = PROJECT_VERSION; // Define a versão explicitamente
         
-        delete manifest.background; 
+        delete manifest.background; // Remove background para limpar
         
         res.json(manifest);
     } catch (error) {
-        res.status(500).json({ error: "Upstream Error" });
+        console.error("Erro no upstream:", error.message);
+        res.status(500).json({ error: "Falha ao obter manifesto original" });
     }
 });
 
 // ============================================================
-// 3. REDIRECIONADOR
+// 3. ROTA REDIRECIONADORA (Streams/Catalogos)
 // ============================================================
+// Redireciona tudo que não for manifesto para o Brazuca original
 app.use('/addon', (req, res) => {
-    res.redirect(307, `${UPSTREAM_BASE}${req.path}`);
+    res.redirect(307, `${BRAZUCA_UPSTREAM}${req.path}`);
 });
 
 // ============================================================
-// 4. INTERFACE (GERADOR)
+// 4. INTERFACE DO GERADOR
 // ============================================================
 const generatorHtml = `
 <!DOCTYPE html>
@@ -88,32 +91,32 @@ const generatorHtml = `
 
         /* Botões de Assinatura */
         .btn-sub-rd {
-            background: #2563eb; color: white; font-weight: 600;
+            background: #1e40af; color: #93c5fd; font-weight: 600;
             display: flex; align-items: center; justify-content: center;
             height: 100%; border-radius: 0.5rem; transition: 0.2s;
-            font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;
+            font-size: 0.75rem; text-transform: uppercase; border: 1px solid #1d4ed8;
         }
-        .btn-sub-rd:hover { background: #1d4ed8; }
+        .btn-sub-rd:hover { background: #1d4ed8; color: white; }
 
         .btn-sub-tb {
-            background: #7c3aed; color: white; font-weight: 600;
+            background: #5b21b6; color: #d8b4fe; font-weight: 600;
             display: flex; align-items: center; justify-content: center;
             height: 100%; border-radius: 0.5rem; transition: 0.2s;
-            font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;
+            font-size: 0.75rem; text-transform: uppercase; border: 1px solid #7c3aed;
         }
-        .btn-sub-tb:hover { background: #6d28d9; }
+        .btn-sub-tb:hover { background: #7c3aed; color: white; }
 
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 bg-black">
 
-    <div class="w-full max-w-xl card rounded-2xl shadow-2xl p-8 border border-gray-800 relative">
+    <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-8 border border-gray-800 relative">
         
         <!-- Header -->
         <div class="text-center mb-8">
-            <img src="${NEW_LOGO}" id="previewLogo" class="w-20 h-20 mx-auto mb-3 rounded-full border-2 border-gray-800 shadow-lg object-cover">
+            <img src="${DEFAULT_LOGO}" id="previewLogo" class="w-20 h-20 mx-auto mb-3 rounded-full border-2 border-gray-800 shadow-lg object-cover">
             <h1 class="text-3xl font-extrabold text-white tracking-tight">Brazuca <span class="text-blue-500">Wrapper</span></h1>
-            <p class="text-gray-500 text-xs mt-1 uppercase tracking-widest">Gerador StremThru v33</p>
+            <p class="text-gray-500 text-xs mt-1 uppercase tracking-widest">Gerador StremThru v${PROJECT_VERSION}</p>
         </div>
 
         <form class="space-y-6">
@@ -122,12 +125,26 @@ const generatorHtml = `
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">1. Servidor (Bridge)</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthru.elfhosted.com">ElfHosted (Recomendado)</option>
-                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
+                    <option value="https://stremthru.elfhosted.com">ElfHosted</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight</option>
                 </select>
             </div>
 
-            <!-- 2. Debrids (Novo Layout) -->
+            <!-- Personalização -->
+            <div class="divider"><span>Personalização (Opcional)</span></div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">Nome do Addon</label>
+                    <input type="text" id="custom_name" value="${DEFAULT_NAME}" class="w-full input-dark p-2 rounded text-sm mt-1">
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-gray-500 uppercase">Ícone (URL)</label>
+                    <input type="text" id="custom_logo" value="${DEFAULT_LOGO}" class="w-full input-dark p-2 rounded text-sm mt-1" onchange="updatePreview()">
+                </div>
+            </div>
+
+            <!-- 2. Debrids (Tokens) -->
             <div class="divider"><span>Serviços Debrid</span></div>
             
             <div class="space-y-4">
@@ -139,11 +156,11 @@ const generatorHtml = `
                             <input type="checkbox" id="use_rd" class="w-5 h-5 accent-blue-600 cursor-pointer" onchange="validate()">
                             <span class="text-sm font-bold text-white">Real-Debrid</span>
                         </div>
-                        <span class="text-[10px] text-gray-500">Link Premium</span>
+                        <span class="text-[10px] text-gray-500">Store Token</span>
                     </div>
                     
                     <div class="flex gap-3 h-10">
-                        <input type="text" id="rd_key" placeholder="Cole sua API KEY" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
+                        <input type="text" id="rd_key" placeholder="Cole o Token da Store 'rd'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
                         <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd w-32 shadow-lg shadow-blue-900/20">
                             Assinar <i class="fas fa-external-link-alt ml-2"></i>
                         </a>
@@ -157,11 +174,11 @@ const generatorHtml = `
                             <input type="checkbox" id="use_tb" class="w-5 h-5 accent-purple-600 cursor-pointer" onchange="validate()">
                             <span class="text-sm font-bold text-white">TorBox</span>
                         </div>
-                        <span class="text-[10px] text-gray-500">Link Premium</span>
+                        <span class="text-[10px] text-gray-500">Store Token</span>
                     </div>
                     
                     <div class="flex gap-3 h-10">
-                        <input type="text" id="tb_key" placeholder="Cole sua API KEY" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
+                        <input type="text" id="tb_key" placeholder="Cole o Token da Store 'tb'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
                         <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb w-32 shadow-lg shadow-purple-900/20">
                             Assinar <i class="fas fa-external-link-alt ml-2"></i>
                         </a>
@@ -169,55 +186,15 @@ const generatorHtml = `
                 </div>
             </div>
 
-            <!-- 3. Fontes Extras -->
-            <div class="divider"><span>Fontes & Personalização</span></div>
-            
-            <div class="grid grid-cols-1 gap-4">
-                
-                <!-- Personalização -->
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-500 uppercase">Nome do Addon</label>
-                        <input type="text" id="custom_name" value="Brazuca" class="w-full input-dark p-2 rounded text-sm mt-1">
-                    </div>
-                    <div>
-                        <label class="text-[10px] font-bold text-gray-500 uppercase">Ícone (URL)</label>
-                        <input type="text" id="custom_logo" value="${NEW_LOGO}" class="w-full input-dark p-2 rounded text-sm mt-1" onchange="updatePreview()">
-                    </div>
-                </div>
-
-                <!-- Comet & Jackett -->
-                <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800 space-y-3">
-                    
-                    <label class="flex items-center gap-3 cursor-pointer">
-                        <input type="checkbox" id="use_comet" class="w-4 h-4 accent-green-500 rounded">
-                        <div>
-                            <span class="text-xs font-bold text-white block">Incluir Comet (ElfHosted)</span>
-                            <span class="text-[10px] text-gray-500">Mais resultados em alta qualidade</span>
-                        </div>
-                    </label>
-
-                    <div class="pt-2 border-t border-gray-700">
-                        <label class="flex items-center gap-3 cursor-pointer">
-                            <input type="checkbox" id="use_jackett" class="w-4 h-4 accent-yellow-500 rounded" onchange="toggleJackett()">
-                            <span class="text-xs font-bold text-white">Incluir Jackett / Prowlarr</span>
-                        </label>
-                        <input type="text" id="jackett_url" placeholder="URL do Manifesto (https://.../manifest.json)" class="w-full input-dark p-2 rounded text-xs mt-2 hidden">
-                    </div>
-                </div>
-            </div>
-
             <!-- Resultado -->
             <div id="resultArea" class="hidden pt-4 border-t border-gray-800 space-y-3">
                 <div class="relative">
-                    <input type="text" id="finalUrl" readonly class="w-full bg-black border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-14 font-mono focus:outline-none">
-                    <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">
-                        COPY
-                    </button>
+                    <input type="text" id="finalUrl" readonly class="w-full bg-black border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono focus:outline-none">
+                    <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">COPY</button>
                 </div>
                 
                 <a id="installBtn" href="#" class="block w-full btn-action py-3.5 rounded-xl text-center font-bold text-sm uppercase tracking-widest shadow-lg">
-                    INSTALAR AGORA
+                    INSTALAR
                 </a>
             </div>
 
@@ -230,14 +207,11 @@ const generatorHtml = `
 
     <script>
         const instanceSelect = document.getElementById('instance');
-        
-        // URLs Padrão
-        const COMET_URL = "${COMET_BASE}";
+        const customInput = document.getElementById('custom_instance');
 
-        function toggleJackett() {
-            const chk = document.getElementById('use_jackett').checked;
-            document.getElementById('jackett_url').classList.toggle('hidden', !chk);
-        }
+        instanceSelect.addEventListener('change', (e) => {
+            customInput.classList.toggle('hidden', e.target.value !== 'custom');
+        });
 
         function updatePreview() {
             const url = document.getElementById('custom_logo').value.trim();
@@ -280,10 +254,8 @@ const generatorHtml = `
         document.getElementById('tb_key').addEventListener('input', validate);
 
         function generate() {
-            let host = instanceSelect.value;
-            // Garante https e remove barra
+            let host = instanceSelect.value === 'custom' ? customInput.value.trim() : instanceSelect.value;
             host = host.replace(/\\/$/, '').replace('http:', 'https:');
-            if (!host.startsWith('http')) host = 'https://' + host;
 
             // 1. Personalização
             const cName = document.getElementById('custom_name').value.trim();
@@ -292,28 +264,16 @@ const generatorHtml = `
             let proxyParams = \`?name=\${encodeURIComponent(cName)}\`;
             if(cLogo) proxyParams += \`&logo=\${encodeURIComponent(cLogo)}\`;
 
+            // Nossa URL de Proxy (que serve o manifesto editado)
             const myMirrorUrl = window.location.origin + "/addon/manifest.json" + proxyParams;
 
             // 2. Montar Upstreams
             let config = { upstreams: [], stores: [] };
             
-            // A) Brazuca (Principal)
+            // Adiciona Brazuca (via nosso Proxy)
             config.upstreams.push({ u: myMirrorUrl });
 
-            // B) Comet (Se marcado)
-            if (document.getElementById('use_comet').checked) {
-                config.upstreams.push({ u: COMET_URL });
-            }
-
-            // C) Jackett (Se marcado)
-            if (document.getElementById('use_jackett').checked) {
-                const jURL = document.getElementById('jackett_url').value.trim();
-                if (jURL && jURL.startsWith('http')) {
-                    config.upstreams.push({ u: jURL });
-                }
-            }
-
-            // 3. Montar Stores
+            // 3. Montar Stores (Debrids)
             if (document.getElementById('use_rd').checked) {
                 config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
             }
@@ -323,6 +283,8 @@ const generatorHtml = `
 
             const b64 = btoa(JSON.stringify(config));
             const hostClean = host.replace(/^https?:\\/\\//, '');
+            
+            // Links finais
             const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
             const stremioUrl = \`stremio://\${hostClean}/stremio/wrap/\${b64}/manifest.json\`;
 
@@ -338,22 +300,10 @@ const generatorHtml = `
             el.select();
             document.execCommand('copy');
             const btn = document.querySelector('button[onclick="copyLink()"]');
+            const oldTxt = btn.innerText;
             btn.innerText = "OK!";
-            setTimeout(() => btn.innerText = "COPY", 1500);
+            setTimeout(() => btn.innerText = oldTxt, 1500);
         }
     </script>
 </body>
 </html>
-`;
-
-app.get('/', (req, res) => res.send(generatorHtml));
-
-app.get('*', (req, res) => {
-    if (req.path.startsWith('/addon')) return res.status(404).send('Not Found');
-    res.redirect('/');
-});
-
-const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => {
-    console.log(`Gerador rodando na porta ${PORT}`);
-});
