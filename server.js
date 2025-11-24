@@ -105,87 +105,116 @@ async function checkRealDebridCache(hashes, apiKey) {
     } catch (e) { return {}; }
 }
 
-// --- TORBOX (MODO ESTRITO) ---
+// --- TORBOX (MODO ESTRITO COM PATCH 2025) ---
+
 async function resolveTorBox(infoHash, apiKey) {
     try {
-        // TorBox ODEIA trackers extras no magnet via API. Envia limpo.
         const magnet = `magnet:?xt=urn:btih:${infoHash}`;
-        
-        // 1. Create
+
+        // === 1) Criar torrent ===
+        // Usamos URLSearchParams para emular o comportamento de formulário/FormData para axios
         const params = new URLSearchParams();
         params.append('magnet', magnet);
         params.append('seed', '1');
         params.append('allow_zip', 'false');
 
-        // Tenta criar
-        const createResp = await axios.post('https://api.torbox.app/v1/api/torrents/create', params, {
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
+        const createResp = await axios.post(
+            'https://api.torbox.app/v1/torrents/create', // Endpoint corrigido
+            params,
+            {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'User-Agent': AXIOS_CONFIG.headers['User-Agent']
+                }
+            }
+        );
 
-        if (!createResp.data.success) {
-            // Se falhar, retorna o erro exato da API
-            return { url: null, error: `TorBox: ${createResp.data.detail || createResp.data.error || 'Falha ao adicionar'}` };
-        }
+        if (!createResp.data?.success)
+            return { url: null, error: "TorBox: criação falhou. " + (createResp.data.detail || createResp.data.error || createResp.data.message) };
 
         const torrentId = createResp.data.data.torrent_id;
 
-        // 2. Listar (Wait Loop)
-        // TorBox precisa de tempo. Se pedir rápido demais, retorna vazio.
-        let foundFile = null;
-        for(let i=0; i<5; i++) { // Tenta por 10s
-            await new Promise(r => setTimeout(r, 2000));
-            
-            try {
-                const listResp = await axios.get(`https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true&id=${torrentId}`, {
-                    headers: { 'Authorization': `Bearer ${apiKey}` }
-                });
-                
-                const data = listResp.data.data;
-                if (data && data.files && data.files.length > 0) {
-                    // Pega o maior arquivo
-                    foundFile = data.files.reduce((prev, curr) => (prev.size > curr.size) ? prev : curr);
-                    break;
-                }
-            } catch(e) {}
-        }
-        
-        if (foundFile) {
-            const reqUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${apiKey}&torrent_id=${torrentId}&file_id=${foundFile.id}&zip_link=false`;
-            const reqResp = await axios.get(reqUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-            
-            if (reqResp.data.success) return { url: reqResp.data.data, error: null };
-        }
-        
-        return { url: null, error: "Download iniciado. Arquivos ainda não processados pelo TorBox." };
+        // === 2) Esperar arquivos ficarem disponíveis (Polling) ===
+        let file = null;
 
-    } catch (e) { 
-        // Captura erro HTTP exato
+        for (let i = 0; i < 10; i++) {
+            await new Promise(r => setTimeout(r, 2000)); // Espera 2 segundos (Total 20s)
+            
+            const listResp = await axios.get(
+                `https://api.torbox.app/v1/torrents/${torrentId}`, // Endpoint corrigido
+                {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'User-Agent': AXIOS_CONFIG.headers['User-Agent']
+                    }
+                }
+            );
+
+            const files = listResp.data?.data?.files || [];
+            if (files.length > 0) {
+                // Pega o maior arquivo (simulando a escolha do vídeo principal)
+                file = files.reduce((a, b) => a.size > b.size ? a : b); 
+                break;
+            }
+        }
+
+        if (!file)
+            return { url: null, error: "TorBox: timeout (20s) ao ler arquivos. Arquivos ainda não estão processados." };
+
+        // === 3) Gerar link de download ===
+        const dlResp = await axios.get(
+            `https://api.torbox.app/v1/torrents/${torrentId}/files/${file.id}/download`, // Endpoint corrigido
+            {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'User-Agent': AXIOS_CONFIG.headers['User-Agent']
+                }
+            }
+        );
+
+        if (!dlResp.data?.success)
+            return { url: null, error: "TorBox: falha ao gerar URL. " + (dlResp.data.detail || dlResp.data.error || dlResp.data.message) };
+
+        return { url: dlResp.data.data, error: null };
+
+    } catch (e) {
         const errMsg = e.response?.data?.detail || e.message;
         console.error("TorBox Fatal:", errMsg);
-        return { url: null, error: `Erro TorBox: ${errMsg}` };
+        return { url: null, error: "TorBox ERRO: " + errMsg };
     }
 }
 
 async function checkTorBoxCache(hashes, apiKey) {
     if (!hashes.length) return {};
-    // TorBox aceita lista separada por vírgula na query
-    const hStr = hashes.slice(0, 40).join(',');
+    const validHashes = hashes.slice(0, 40); // Limita o número de hashes por request
 
     try {
-        const url = `https://api.torbox.app/v1/api/torrents/checkcached?hash=${hStr}&format=list&list_files=false`;
-        const resp = await axios.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-        
-        const results = {};
-        hashes.forEach(h => results[h.toLowerCase()] = false);
-        
-        const data = resp.data.data;
-        if (Array.isArray(data)) {
-            data.forEach(h => { if(h) results[h.toLowerCase()] = true; });
-        } else if (typeof data === 'object') {
-            Object.keys(data).forEach(k => { if(data[k]) results[k.toLowerCase()] = true; });
+        const url = `https://api.torbox.app/v1/torrents/check?hash=${validHashes.join(',')}`; // Endpoint corrigido
+
+        const resp = await axios.get(url, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'User-Agent': AXIOS_CONFIG.headers['User-Agent']
+            }
+        });
+
+        const result = {};
+        validHashes.forEach(h => result[h.toLowerCase()] = false);
+
+        if (resp.data?.data) {
+            // O TorBox retorna um objeto com hash: true/false
+            Object.keys(resp.data.data).forEach(h => {
+                if (resp.data.data[h] === true) {
+                    result[h.toLowerCase()] = true;
+                }
+            });
         }
-        return results;
-    } catch (e) { return {}; }
+
+        return result;
+    } catch (e) {
+        return {};
+    }
 }
 
 // ============================================================
