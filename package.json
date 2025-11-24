@@ -1,15 +1,19 @@
 {
-  "name": "brazuca-direct-pro",
-  "version": "5.0.0",
-  "description": "Brazuca Direct Integration",
+  "name": "brazuca-wrapper-custom",
+  "version": "6.1.0",
+  "description": "Brazuca Wrapper + Customization",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
-    "axios": "^1.6.2",
-    "stremio-addon-sdk": "^1.6.10"
+    "axios": "^1.6.2"
   }
 }
+
+
