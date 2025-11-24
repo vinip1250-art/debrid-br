@@ -1,456 +1,295 @@
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
-const { addonBuilder } = require('stremio-addon-sdk');
-
 const app = express();
+
 app.use(cors());
 
 // ============================================================
-// 1. MANIFESTO
+// 1. CONFIGURAÇÕES PADRÃO
 // ============================================================
-const manifest = {
-    id: 'community.brazuca.pro.direct.v13', // Versão incrementada
-    version: '13.0.0',
-    name: 'Brazuca',
-    description: 'Brazuca Direct (TorBox Strict Fix)',
-    resources: ['stream'],
-    types: ['movie', 'series'],
-    catalogs: [],
-    idPrefixes: ['tt'],
-    behaviorHints: {
-        configurable: true,
-        configurationRequired: true
-    },
-    logo: "https://i.imgur.com/Q61eP9V.png"
-};
-
-const builder = new addonBuilder(manifest);
-const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-
-// Headers globais para evitar bloqueios simples
-const AXIOS_CONFIG = {
-    headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
-};
+const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
+const DEFAULT_NAME = "Brazuca"; 
+const DEFAULT_LOGO = "https://i.imgur.com/Q61eP9V.png";
 
 // ============================================================
-// 2. FUNÇÕES DE DEBRID
+// 2. ROTA DO MANIFESTO DINÂMICO (O Segredo da Customização)
 // ============================================================
-
-// --- REAL-DEBRID (Mantido funcionando) ---
-async function resolveRealDebrid(infoHash, apiKey) {
+app.get('/addon/manifest.json', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    // Cache curto para permitir mudanças rápidas
+    res.setHeader('Cache-Control', 'public, max-age=60'); 
+    
     try {
-        // RD aceita trackers, ajuda na velocidade
-        const magnet = `magnet:?xt=urn:btih:${infoHash}&tr=udp://tracker.opentrackr.org:1337/announce`;
+        // 1. Captura personalizações da URL (Query Params)
+        const customName = req.query.name || DEFAULT_NAME;
+        const customLogo = req.query.logo || DEFAULT_LOGO;
         
-        const addUrl = 'https://api.real-debrid.com/rest/1.0/torrents/addMagnet';
-        const addResp = await axios.post(addUrl, `magnet=${encodeURIComponent(magnet)}`, {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
-        });
-        const torrentId = addResp.data.id;
+        // 2. Baixa o original
+        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
+        const manifest = response.data;
 
-        const infoUrl = `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`;
-        let attempts = 0;
-        // Polling de seleção (RD demora para processar magnet)
-        while (attempts < 10) {
-            const infoResp = await axios.get(infoUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-            if (infoResp.data.status === 'waiting_files_selection') {
-                await axios.post(`https://api.real-debrid.com/rest/1.0/torrents/selectFiles/${torrentId}`, `files=all`, {
-                    headers: { 'Authorization': `Bearer ${apiKey}` }
-                });
-                break;
-            }
-            if (infoResp.data.status === 'downloaded') break;
-            await new Promise(r => setTimeout(r, 500));
-            attempts++;
-        }
-
-        const finalInfo = await axios.get(infoUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-        if (finalInfo.data.links && finalInfo.data.links.length > 0) {
-            const unrestrictResp = await axios.post('https://api.real-debrid.com/rest/1.0/unrestrict/link', `link=${finalInfo.data.links[0]}`, {
-                headers: { 'Authorization': `Bearer ${apiKey}` }
-            });
-            return { url: unrestrictResp.data.download, error: null };
-        }
-        return { url: null, error: "Aguardando download no RD..." };
-    } catch (e) { 
-        return { url: null, error: e.response?.data?.error || e.message };
-    }
-}
-
-async function checkRealDebridCache(hashes, apiKey) {
-    if (!hashes.length) return {};
-    const validHashes = hashes.slice(0, 50);
-    try {
-        const url = `https://api.real-debrid.com/rest/1.0/torrents/instantAvailability/${validHashes.join('/')}`;
-        const resp = await axios.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-        const results = {};
+        // 3. Aplica a customização
+        // Geramos um ID baseado no nome para que o Stremio não confunda addons diferentes
+        const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
         
-        // Normalização total para evitar mismatch de Case
-        const mapLower = {};
-        Object.keys(resp.data).forEach(k => mapLower[k.toLowerCase()] = resp.data[k]);
-
-        validHashes.forEach(h => {
-            const data = mapLower[h.toLowerCase()];
-            // Lógica estrita RD
-            if (data && data.rd && Array.isArray(data.rd) && data.rd.length > 0) {
-                results[h] = true;
-            } else {
-                results[h] = false;
-            }
-        });
-        return results;
-    } catch (e) { return {}; }
-}
-
-// --- TORBOX (MODO ESTRITO COM PATCH 2025) ---
-
-async function resolveTorBox(infoHash, apiKey) {
-    try {
-        const magnet = `magnet:?xt=urn:btih:${infoHash}`;
-
-        // === 1) Criar torrent ===
-        const params = new URLSearchParams();
-        params.append('magnet', magnet);
-        params.append('seed', '1');
-        params.append('allow_zip', 'false');
-
-        const createResp = await axios.post(
-            'https://api.torbox.app/v1/torrents/create', // URL de criação moderna
-            params,
-            {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/x-www-form-urlencoded', // CRÍTICO: Indica formato do 'params'
-                    'User-Agent': AXIOS_CONFIG.headers['User-Agent']
-                }
-            }
-        );
-
-        // Se a criação falhar (ex: hash inválido), retorna o erro de dados da API.
-        if (!createResp.data?.success)
-            return { url: null, error: `TorBox: criação falhou. Mensagem: ${createResp.data?.detail || createResp.data?.error || 'Erro desconhecido.'}` };
-
-        const torrentId = createResp.data.data.torrent_id;
-
-        // === 2) Esperar arquivos ficarem disponíveis (Polling) ===
-        let file = null;
-
-        for (let i = 0; i < 10; i++) {
-            await new Promise(r => setTimeout(r, 2000)); // Espera 2 segundos (Total 20s)
-            
-            const listResp = await axios.get(
-                `https://api.torbox.app/v1/torrents/${torrentId}`, // URL de info moderna
-                {
-                    headers: {
-                        'Authorization': `Bearer ${apiKey}`,
-                        'User-Agent': AXIOS_CONFIG.headers['User-Agent']
-                    }
-                }
-            );
-
-            // AQUI: Verifica se o status é 'downloaded' ou se 'files' existe.
-            if (listResp.data.data?.files?.length > 0) {
-                const files = listResp.data.data.files;
-                // Pega o maior arquivo (vídeo principal)
-                file = files.reduce((a, b) => a.size > b.size ? a : b); 
-                break;
-            }
-        }
-
-        if (!file)
-            return { url: null, error: "TorBox: timeout (20s) ao ler arquivos. Tente novamente." };
-
-        // === 3) Gerar link de download ===
-        const dlResp = await axios.get(
-            `https://api.torbox.app/v1/torrents/${torrentId}/files/${file.id}/download`, // URL de download moderna
-            {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'User-Agent': AXIOS_CONFIG.headers['User-Agent']
-                }
-            }
-        );
-
-        if (!dlResp.data?.success)
-            return { url: null, error: "TorBox: falha ao gerar URL. " + (dlResp.data.detail || dlResp.data.error || dlResp.data.message) };
-
-        return { url: dlResp.data.data, error: null };
-
-    } catch (e) {
-        // 💡 Correção: Captura o erro do axios e retorna a mensagem mais clara
-        if (axios.isAxiosError(e) && e.response) {
-            const status = e.response.status;
-            let msg = e.response.data?.detail || e.response.data?.error || e.message;
-            
-            if (status === 401) msg = "Chave TorBox Inválida. Verifique sua API Key.";
-            if (status === 404) msg = `Recurso TorBox não encontrado (404). URL: ${e.config.url}`; // Mostra a URL que deu 404
-            
-            console.error(`TorBox Fatal (${status}):`, msg);
-            return { url: null, error: `TorBox ERRO ${status}: ${msg}` };
-        }
+        manifest.id = `community.brazuca.wrapper.${idSuffix}`;
+        manifest.name = customName;
+        manifest.description = `Wrapper customizado: ${customName}`;
+        manifest.logo = customLogo;
         
-        console.error("TorBox Fatal:", e.message);
-        return { url: null, error: `Erro TorBox Desconhecido: ${e.message}` };
+        delete manifest.background; 
+        
+        res.json(manifest);
+    } catch (error) {
+        res.status(500).json({ error: "Upstream Error" });
     }
-}
-
-async function checkTorBoxCache(hashes, apiKey) {
-    if (!hashes.length) return {};
-    const validHashes = hashes.slice(0, 40); // Limita o número de hashes por request
-
-    try {
-        // URL de checagem de cache moderna
-        const url = `https://api.torbox.app/v1/torrents/check?hash=${validHashes.join(',')}`; 
-
-        const resp = await axios.get(url, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'User-Agent': AXIOS_CONFIG.headers['User-Agent']
-            }
-        });
-
-        const result = {};
-        validHashes.forEach(h => result[h.toLowerCase()] = false);
-
-        if (resp.data?.data) {
-            Object.keys(resp.data.data).forEach(h => {
-                if (resp.data.data[h] === true) {
-                    result[h.toLowerCase()] = true;
-                }
-            });
-        }
-
-        return result;
-    } catch (e) {
-        // Se a checagem de cache falhar, apenas retorna vazio
-        return {};
-    }
-}
+});
 
 // ============================================================
-// 3. HTML CONFIG
+// 3. REDIRECIONADOR
 // ============================================================
-const configureHtml = `
+app.use('/addon', (req, res) => {
+    res.redirect(307, `${UPSTREAM_BASE}${req.path}`);
+});
+
+// ============================================================
+// 4. INTERFACE DO GERADOR
+// ============================================================
+const generatorHtml = `
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brazuca Config</title>
+    <title>Brazuca Wrapper Custom</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { background-color: #0b0c10; color: #c5c6c7; font-family: 'Segoe UI', sans-serif; }
-        .card { background-color: #1f2833; border: 1px solid #45a29e; box-shadow: 0 0 20px rgba(102, 252, 241, 0.15); }
-        .input-dark { background-color: #0b0c10; border: 1px solid #45a29e; color: #fff; }
-        .input-dark:focus { box-shadow: 0 0 8px #66fcf1; outline: none; }
-        .btn-action { background: linear-gradient(90deg, #45a29e 0%, #66fcf1 100%); color: #0b0c10; font-weight: bold; }
-        .btn-ref-rd { background-color: #2563eb; color: white; font-size: 0.8rem; padding: 10px; border-radius: 8px; display: block; text-align: center; font-weight: bold; }
-        .btn-ref-tb { background-color: #9333ea; color: white; font-size: 0.8rem; padding: 10px; border-radius: 8px; display: block; text-align: center; font-weight: bold; }
+        body { background-color: #050505; color: #e2e8f0; font-family: sans-serif; }
+        .card { background-color: #111; border: 1px solid #333; }
+        .input-dark { background-color: #000; border: 1px solid #333; color: white; }
+        .input-dark:focus { border-color: #3b82f6; outline: none; }
+        .btn-action { background: linear-gradient(to right, #2563eb, #3b82f6); color: white; }
+        .btn-action:hover { filter: brightness(1.1); }
+        a.link-ref { color: #60a5fa; text-decoration: none; font-size: 0.7rem; display: block; text-align: right; margin-top: 5px; }
+        a.link-ref:hover { text-decoration: underline; }
+        .divider { border-top: 1px solid #222; margin: 20px 0; position: relative; }
+        .divider span { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #111; padding: 0 10px; color: #555; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-black to-gray-900">
-    <div class="w-full max-w-md card rounded-2xl p-8 relative">
-        <div class="text-center mb-8">
-            <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2">Brazuca <span class="text-white">Direct</span></h1>
-            <p class="text-gray-400 text-xs">V13.0 FINAL</p>
+<body class="min-h-screen flex items-center justify-center p-4 bg-black">
+
+    <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-6 border border-gray-800 relative">
+        
+        <div class="text-center mb-6">
+            <img src="${DEFAULT_LOGO}" id="previewLogo" class="w-14 h-14 mx-auto mb-2 rounded-full border border-gray-700 object-cover">
+            <h1 class="text-xl font-bold text-white">Brazuca <span class="text-blue-500">+</span></h1>
+            <p class="text-gray-500 text-xs">Wrapper Customizável v31.0</p>
         </div>
-        <form id="configForm" class="space-y-6">
-            <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-blue-500 transition-colors">
-                <label class="flex items-center gap-3 cursor-pointer mb-3">
-                    <input type="checkbox" id="use_rd" class="w-5 h-5 accent-[#66fcf1]" onchange="validate()">
-                    <span class="text-lg font-bold text-white">Real-Debrid</span>
-                </label>
-                <input type="text" id="rd_key" placeholder="API Key (F...)" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 mb-3" disabled>
-                <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-ref-rd">💎 Assinar Real-Debrid</a>
+
+        <form class="space-y-5">
+            
+            <!-- Instância -->
+            <div>
+                <label class="text-xs font-bold text-gray-500 uppercase ml-1">1. Instância</label>
+                <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1">
+                    <option value="https://stremthru.elfhosted.com">ElfHosted (Recomendado)</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
+                    <option value="https://api.stremthru.xyz">Oficial</option>
+                    <option value="custom">Outra...</option>
+                </select>
+                <input type="text" id="custom_instance" placeholder="https://..." class="hidden w-full input-dark p-3 rounded-lg text-sm mt-2">
             </div>
-            <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-purple-500 transition-colors">
-                <label class="flex items-center gap-3 cursor-pointer mb-3">
-                    <input type="checkbox" id="use_tb" class="w-5 h-5 accent-[#66fcf1]" onchange="validate()">
-                    <span class="text-lg font-bold text-white">TorBox</span>
-                </label>
-                <input type="text" id="tb_key" placeholder="API Key TorBox" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 mb-3" disabled>
-                <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-ref-tb">⚡ Assinar TorBox</a>
+
+            <!-- Personalização (NOVO) -->
+            <div class="divider"><span>Personalização (Sidekick Free)</span></div>
+            
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="text-xs font-bold text-gray-500 uppercase ml-1">Nome do Addon</label>
+                    <input type="text" id="custom_name" placeholder="Ex: Meus Filmes" value="Brazuca" class="w-full input-dark p-2 rounded text-sm mt-1">
+                </div>
+                <div>
+                    <label class="text-xs font-bold text-gray-500 uppercase ml-1">Ícone (URL)</label>
+                    <input type="text" id="custom_logo" placeholder="https://..." class="w-full input-dark p-2 rounded text-sm mt-1" onchange="updatePreview()">
+                </div>
             </div>
-            <div class="grid grid-cols-4 gap-2 pt-2">
-                <button type="button" onclick="copyLink()" id="btnCopy" class="col-span-1 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-xl opacity-50 pointer-events-none flex items-center justify-center"><i class="fas fa-copy"></i></button>
-                <a id="installBtn" href="#" class="col-span-3 block btn-action py-4 rounded-xl text-lg text-center font-bold uppercase tracking-widest opacity-50 pointer-events-none">INSTALAR</a>
+
+            <!-- Debrids -->
+            <div class="divider"><span>Debrid</span></div>
+            <div class="space-y-3">
+                <div class="bg-[#161616] p-3 rounded border border-gray-800">
+                    <div class="flex items-center gap-2 mb-2">
+                        <input type="checkbox" id="use_rd" class="accent-blue-600 w-4 h-4" onchange="validate()">
+                        <span class="text-sm font-bold text-gray-300">Real-Debrid</span>
+                    </div>
+                    <input type="text" id="rd_key" placeholder="Token Store 'rd'" class="w-full input-dark p-2 rounded text-xs" disabled>
+                    <a href="http://real-debrid.com/?id=6684575" target="_blank" class="link-ref">Assinar RD ↗</a>
+                </div>
+
+                <div class="bg-[#161616] p-3 rounded border border-gray-800">
+                    <div class="flex items-center gap-2 mb-2">
+                        <input type="checkbox" id="use_tb" class="accent-purple-600 w-4 h-4" onchange="validate()">
+                        <span class="text-sm font-bold text-gray-300">TorBox</span>
+                    </div>
+                    <input type="text" id="tb_key" placeholder="Token Store 'tb'" class="w-full input-dark p-2 rounded text-xs" disabled>
+                    <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="link-ref text-purple-400">Assinar TB ↗</a>
+                </div>
             </div>
-            <input type="text" id="finalLink" class="hidden">
+
+            <!-- Fontes Extras -->
+            <div class="divider"><span>Extras</span></div>
+            <div>
+                <div class="bg-[#161616] p-3 rounded border border-gray-800">
+                    <label class="flex items-center gap-2 mb-2 cursor-pointer">
+                        <input type="checkbox" id="use_jackett" class="accent-green-500 w-4 h-4" onchange="toggleJackett()">
+                        <span class="text-sm font-bold text-gray-300">Jackett / Prowlarr</span>
+                    </label>
+                    <input type="text" id="jackett_url" placeholder="URL do Manifesto (JackettIO)" class="w-full input-dark p-2 rounded text-xs hidden">
+                </div>
+            </div>
+
+            <!-- Resultado -->
+            <div id="resultArea" class="hidden pt-4 border-t border-gray-800 space-y-3">
+                <div class="relative">
+                    <input type="text" id="finalUrl" readonly class="w-full bg-gray-900 border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono focus:outline-none">
+                    <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">COPY</button>
+                </div>
+                <a id="installBtn" href="#" class="block w-full btn-action py-3 rounded-lg text-center font-bold text-sm uppercase tracking-wide shadow-lg">
+                    INSTALAR
+                </a>
+            </div>
+
+            <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-800 text-gray-500 py-3 rounded-lg text-sm font-bold cursor-not-allowed transition" disabled>
+                GERAR CONFIGURAÇÃO
+            </button>
+
         </form>
     </div>
-    <div id="toast" class="fixed bottom-5 right-5 bg-green-600 text-white px-4 py-2 rounded shadow-lg hidden">Link Copiado!</div>
+
     <script>
+        const instanceSelect = document.getElementById('instance');
+        const customInput = document.getElementById('custom_instance');
+
+        instanceSelect.addEventListener('change', (e) => {
+            customInput.classList.toggle('hidden', e.target.value !== 'custom');
+        });
+
+        function toggleJackett() {
+            const chk = document.getElementById('use_jackett').checked;
+            document.getElementById('jackett_url').classList.toggle('hidden', !chk);
+        }
+
+        function updatePreview() {
+            const url = document.getElementById('custom_logo').value.trim();
+            if(url) document.getElementById('previewLogo').src = url;
+        }
+
         function validate() {
             const rd = document.getElementById('use_rd').checked;
             const tb = document.getElementById('use_tb').checked;
-            const rdKey = document.getElementById('rd_key');
-            const tbKey = document.getElementById('tb_key');
-            const btnInstall = document.getElementById('installBtn');
-            const btnCopy = document.getElementById('btnCopy');
+            const rdInput = document.getElementById('rd_key');
+            const tbInput = document.getElementById('tb_key');
+            const btn = document.getElementById('btnGenerate');
 
-            rdKey.disabled = !rd; tbKey.disabled = !tb;
-            if(!rd) rdKey.value = ''; if(!tb) tbKey.value = '';
-            rdKey.parentElement.style.opacity = rd ? '1' : '0.6';
-            tbKey.parentElement.style.opacity = tb ? '1' : '0.6';
+            rdInput.disabled = !rd;
+            tbInput.disabled = !tb;
+            
+            if(!rd) rdInput.value = '';
+            if(!tb) tbInput.value = '';
+            
+            rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
+            tbInput.parentElement.style.opacity = tb ? '1' : '0.5';
 
-            if ((rd && rdKey.value.length > 5) || (tb && tbKey.value.length > 5)) {
-                btnInstall.classList.remove('opacity-50', 'pointer-events-none');
-                btnCopy.classList.remove('opacity-50', 'pointer-events-none');
-                generateLink();
+            const isValid = (rd && rdInput.value.trim()) || (tb && tbInput.value.trim());
+
+            if(isValid) {
+                btn.classList.replace('bg-gray-800', 'btn-action');
+                btn.classList.replace('text-gray-500', 'text-white');
+                btn.classList.remove('cursor-not-allowed');
+                btn.disabled = false;
             } else {
-                btnInstall.classList.add('opacity-50', 'pointer-events-none');
-                btnCopy.classList.add('opacity-50', 'pointer-events-none');
+                btn.classList.replace('btn-action', 'bg-gray-800');
+                btn.classList.replace('text-white', 'text-gray-500');
+                btn.classList.add('cursor-not-allowed');
+                btn.disabled = true;
             }
         }
+
         document.getElementById('rd_key').addEventListener('input', validate);
         document.getElementById('tb_key').addEventListener('input', validate);
 
-        function generateLink() {
-            const rd = document.getElementById('use_rd').checked;
-            const tb = document.getElementById('use_tb').checked;
-            const config = {
-                s: 'multi',
-                rd: rd ? document.getElementById('rd_key').value.trim() : null,
-                tb: tb ? document.getElementById('tb_key').value.trim() : null
-            };
+        function generate() {
+            let host = instanceSelect.value === 'custom' ? customInput.value.trim() : instanceSelect.value;
+            host = host.replace(/\\/$/, '').replace('http:', 'https:');
+
+            // 1. Personalização (URL Params)
+            const cName = document.getElementById('custom_name').value.trim() || "Brazuca";
+            const cLogo = document.getElementById('custom_logo').value.trim();
+            
+            let proxyParams = \`?name=\${encodeURIComponent(cName)}\`;
+            if(cLogo) proxyParams += \`&logo=\${encodeURIComponent(cLogo)}\`;
+
+            // Nosso Proxy com parâmetros de personalização
+            const myMirrorUrl = window.location.origin + "/addon/manifest.json" + proxyParams;
+
+            let config = { upstreams: [], stores: [] };
+            
+            // Adiciona Brazuca Customizado
+            config.upstreams.push({ u: myMirrorUrl });
+
+            // Adiciona Jackett
+            if (document.getElementById('use_jackett').checked) {
+                const jURL = document.getElementById('jackett_url').value.trim();
+                if (jURL && jURL.startsWith('http')) {
+                    config.upstreams.push({ u: jURL });
+                }
+            }
+
+            // Configura Stores
+            if (document.getElementById('use_rd').checked) {
+                config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
+            }
+            if (document.getElementById('use_tb').checked) {
+                config.stores.push({ c: "tb", t: document.getElementById('tb_key').value.trim() });
+            }
+
             const b64 = btoa(JSON.stringify(config));
-            const encoded = encodeURIComponent(b64);
-            const host = window.location.host;
-            document.getElementById('installBtn').href = 'stremio://' + host + '/' + encoded + '/manifest.json';
-            document.getElementById('finalLink').value = 'https://' + host + '/' + encoded + '/manifest.json';
+            const hostClean = host.replace(/^https?:\\/\\//, '');
+            const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
+            const stremioUrl = \`stremio://\${hostClean}/stremio/wrap/\${b64}/manifest.json\`;
+
+            document.getElementById('finalUrl').value = httpsUrl;
+            document.getElementById('installBtn').href = stremioUrl;
+            
+            document.getElementById('btnGenerate').classList.add('hidden');
+            document.getElementById('resultArea').classList.remove('hidden');
         }
+
         function copyLink() {
-            const link = document.getElementById('finalLink').value;
-            navigator.clipboard.writeText(link).then(() => {
-                document.getElementById('toast').classList.remove('hidden');
-                setTimeout(() => document.getElementById('toast').classList.add('hidden'), 2000);
-            });
+            const el = document.getElementById('finalUrl');
+            el.select();
+            document.execCommand('copy');
+            const btn = document.querySelector('button[onclick="copyLink()"]');
+            btn.innerText = "OK!";
+            setTimeout(() => btn.innerText = "COPY", 1500);
         }
     </script>
 </body>
 </html>
 `;
 
-// ============================================================
-// 4. ROTAS
-// ============================================================
+app.get('/', (req, res) => res.send(generatorHtml));
 
-app.get('/', (req, res) => res.send(configureHtml));
-app.get('/configure', (req, res) => res.send(configureHtml));
-
-app.get('/:config/manifest.json', (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    const m = { ...manifest };
-    try { if(req.params.config.length > 5) m.behaviorHints = { configurable: true, configurationRequired: false }; } catch(e){}
-    res.json(m);
-});
-
-app.get('/:config/stream/:type/:id.json', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    let cfg;
-    try { cfg = JSON.parse(Buffer.from(decodeURIComponent(req.params.config), 'base64').toString()); } catch(e) { return res.json({ streams: [] }); }
-
-    const rdKey = cfg.rd;
-    const tbKey = cfg.tb;
-
-    if (!rdKey && !tbKey) return res.json({ streams: [] });
-
-    let streams = [];
-    try {
-        const resp = await axios.get(`${BRAZUCA_UPSTREAM}/stream/${req.params.type}/${req.params.id}.json`, { timeout: 6000 });
-        streams = resp.data.streams || [];
-    } catch(e) { return res.json({ streams: [] }); }
-
-    if (!streams.length) return res.json({ streams: [] });
-
-    // Hashes
-    const hashList = [];
-    streams.forEach(s => {
-        let h = s.infoHash;
-        if (!h && s.url && s.url.startsWith('magnet:')) {
-            const m = s.url.match(/xt=urn:btih:([a-zA-Z0-9]{40})/);
-            if (m) h = m[1];
-        }
-        if (h) { s.infoHash = h.toLowerCase(); if(!hashList.includes(s.infoHash)) hashList.push(s.infoHash); }
-    });
-
-    // Cache Check
-    let rdCache = {}, tbCache = {};
-    if (hashList.length > 0) {
-        if (rdKey) rdCache = await checkRealDebridCache(hashList, rdKey);
-        if (tbKey) tbCache = await checkTorBoxCache(hashList, tbKey);
-    }
-
-    const finalStreams = [];
-    streams.forEach(s => {
-        const h = s.infoHash;
-        if (!h) return;
-        const cleanTitle = (s.title || 'video').replace(/\n/g, ' ').trim();
-
-        // Real Debrid
-        if (rdKey) {
-            const isCached = rdCache[h] === true;
-            const icon = isCached ? '⚡' : '📥';
-            finalStreams.push({
-                name: 'Brazuca [RD]',
-                title: `${icon} ${cleanTitle}`,
-                url: `${req.protocol}://${req.get('host')}/resolve/realdebrid/${encodeURIComponent(rdKey)}/${h}`,
-                behaviorHints: { notWebReady: !isCached }
-            });
-        }
-        // TorBox
-        if (tbKey) {
-            const isCached = tbCache[h] === true;
-            const icon = isCached ? '⚡' : '📥';
-            finalStreams.push({
-                name: 'Brazuca [TB]',
-                title: `${icon} ${cleanTitle}`,
-                url: `${req.protocol}://${req.get('host')}/resolve/torbox/${encodeURIComponent(tbKey)}/${h}`,
-                behaviorHints: { notWebReady: !isCached }
-            });
-        }
-    });
-
-    finalStreams.sort((a, b) => b.title.includes('⚡') - a.title.includes('⚡'));
-    res.json({ streams: finalStreams });
-});
-
-// RESOLVE HANDLER (Agora mostra o ERRO REAL)
-app.get('/resolve/:service/:key/:hash', async (req, res) => {
-    const { service, key, hash } = req.params;
-    let result = null;
-    
-    if (service === 'realdebrid') result = await resolveRealDebrid(hash, key);
-    else if (service === 'torbox') result = await resolveTorBox(hash, key);
-
-    if (result && result.url) {
-        res.redirect(result.url);
-    } else {
-        const errorMsg = result ? result.error : "Erro desconhecido";
-        // Mostra página com o erro EXATO para debug
-        res.status(404).send(`
-            <html>
-                <body style="background:#111; color:#fff; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; text-align:center;">
-                    <div style="max-width:500px; padding:20px; border:1px solid #333; border-radius:10px;">
-                        <h1 style="color:#e74c3c;">⚠️ Falha no Stream</h1>
-                        <p style="font-size:1.1rem; margin:20px 0;">Não foi possível iniciar o stream instantâneo.</p>
-                        <div style="background:#222; padding:15px; border-radius:5px; font-family:monospace; color:#f1c40f;">
-                            ${errorMsg}
-                        </div>
-                        <p style="margin-top:20px; color:#888;">Se o erro for "Download iniciado", verifique sua nuvem.</p>
-                        <button onclick="history.back()" style="background:#45a29e; color:#000; border:none; padding:10px 20px; margin-top:20px; cursor:pointer; border-radius:5px;">Voltar</button>
-                    </div>
-                </body>
-            </html>
-        `);
-    }
+app.get('*', (req, res) => {
+    if (req.path.startsWith('/addon')) return res.status(404).send('Not Found');
+    res.redirect('/');
 });
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-    console.log(`Brazuca v13 rodando na porta ${PORT}`);
+    console.log(`Gerador rodando na porta ${PORT}`);
 });
+
+
