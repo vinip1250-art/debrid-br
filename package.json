@@ -1,7 +1,7 @@
 {
-  "name": "brazuca-wrapper",
+  "name": "brazuca-wrapper-final",
   "version": "1.0.0",
-  "description": "Brazuca Wrapper Generator DEBRID",
+  "description": "Brazuca Wrapper Generator (Clean)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
