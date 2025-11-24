@@ -1,13 +1,15 @@
 {
-  "name": "brazuca-stremthru-generator",
-  "version": "4.0.0",
-  "description": "Gerador de Links StremThru para Brazuca",
+  "name": "brazuca-direct-pro",
+  "version": "5.0.0",
+  "description": "Brazuca Direct Integration",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "axios": "^1.6.2",
+    "stremio-addon-sdk": "^1.6.10"
   }
 }
