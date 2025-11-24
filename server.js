@@ -10,8 +10,8 @@ app.use(cors());
 // 1. MANIFESTO
 // ============================================================
 const manifest = {
-    id: 'community.brazuca.pro.direct.v11',
-    version: '11.0.0',
+    id: 'community.brazuca.pro.direct.v12', // Versão incrementada
+    version: '12.0.0',
     name: 'Brazuca',
     description: 'Brazuca Direct (TorBox Strict Fix)',
     resources: ['stream'],
@@ -39,7 +39,7 @@ const AXIOS_CONFIG = {
 // 2. FUNÇÕES DE DEBRID
 // ============================================================
 
-// --- REAL-DEBRID ---
+// --- REAL-DEBRID (Mantido funcionando) ---
 async function resolveRealDebrid(infoHash, apiKey) {
     try {
         // RD aceita trackers, ajuda na velocidade
@@ -112,26 +112,28 @@ async function resolveTorBox(infoHash, apiKey) {
         const magnet = `magnet:?xt=urn:btih:${infoHash}`;
 
         // === 1) Criar torrent ===
-        // Usamos URLSearchParams para emular o comportamento de formulário/FormData para axios
         const params = new URLSearchParams();
         params.append('magnet', magnet);
         params.append('seed', '1');
         params.append('allow_zip', 'false');
 
         const createResp = await axios.post(
-            'https://api.torbox.app/v1/torrents/create', // Endpoint corrigido
+            'https://api.torbox.app/v1/torrents/create', // URL de criação moderna
             params,
             {
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Content-Type': 'application/x-www-form-urlencoded', // CRÍTICO: Indica formato do 'params'
                     'User-Agent': AXIOS_CONFIG.headers['User-Agent']
                 }
             }
         );
 
+        // Se a criação falhar (ex: hash inválido), lança erro para ser capturado no catch
+        createResp.raiseForStatus();
+
         if (!createResp.data?.success)
-            return { url: null, error: "TorBox: criação falhou. " + (createResp.data.detail || createResp.data.error || createResp.data.message) };
+            return { url: null, error: "TorBox: criação falhou. Sem sucesso." };
 
         const torrentId = createResp.data.data.torrent_id;
 
@@ -142,7 +144,7 @@ async function resolveTorBox(infoHash, apiKey) {
             await new Promise(r => setTimeout(r, 2000)); // Espera 2 segundos (Total 20s)
             
             const listResp = await axios.get(
-                `https://api.torbox.app/v1/torrents/${torrentId}`, // Endpoint corrigido
+                `https://api.torbox.app/v1/torrents/${torrentId}`, // URL de info moderna
                 {
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
@@ -151,20 +153,21 @@ async function resolveTorBox(infoHash, apiKey) {
                 }
             );
 
-            const files = listResp.data?.data?.files || [];
-            if (files.length > 0) {
-                // Pega o maior arquivo (simulando a escolha do vídeo principal)
+            // Se o request falhar aqui, o loop continua
+            if (listResp.data.data?.files?.length > 0) {
+                const files = listResp.data.data.files;
+                // Pega o maior arquivo (vídeo principal)
                 file = files.reduce((a, b) => a.size > b.size ? a : b); 
                 break;
             }
         }
 
         if (!file)
-            return { url: null, error: "TorBox: timeout (20s) ao ler arquivos. Arquivos ainda não estão processados." };
+            return { url: null, error: "TorBox: timeout (20s) ao ler arquivos. Tente novamente." };
 
         // === 3) Gerar link de download ===
         const dlResp = await axios.get(
-            `https://api.torbox.app/v1/torrents/${torrentId}/files/${file.id}/download`, // Endpoint corrigido
+            `https://api.torbox.app/v1/torrents/${torrentId}/files/${file.id}/download`, // URL de download moderna
             {
                 headers: {
                     'Authorization': `Bearer ${apiKey}`,
@@ -179,9 +182,19 @@ async function resolveTorBox(infoHash, apiKey) {
         return { url: dlResp.data.data, error: null };
 
     } catch (e) {
-        const errMsg = e.response?.data?.detail || e.message;
-        console.error("TorBox Fatal:", errMsg);
-        return { url: null, error: "TorBox ERRO: " + errMsg };
+        // Captura o erro da API (401, 404, etc.)
+        const statusCode = e.response?.status;
+        const apiError = e.response?.data?.detail || e.response?.data?.error || e.message;
+        
+        let customMessage = `Erro API: ${apiError}`;
+        if (statusCode === 401) {
+            customMessage = "Chave TorBox Inválida. Verifique sua API Key.";
+        } else if (statusCode === 404) {
+             customMessage = "Recurso não encontrado (404). Hash ou Endpoint incorreto.";
+        }
+        
+        console.error("TorBox Fatal:", customMessage);
+        return { url: null, error: customMessage };
     }
 }
 
@@ -190,7 +203,8 @@ async function checkTorBoxCache(hashes, apiKey) {
     const validHashes = hashes.slice(0, 40); // Limita o número de hashes por request
 
     try {
-        const url = `https://api.torbox.app/v1/torrents/check?hash=${validHashes.join(',')}`; // Endpoint corrigido
+        // URL de checagem de cache moderna
+        const url = `https://api.torbox.app/v1/torrents/check?hash=${validHashes.join(',')}`; 
 
         const resp = await axios.get(url, {
             headers: {
@@ -203,7 +217,6 @@ async function checkTorBoxCache(hashes, apiKey) {
         validHashes.forEach(h => result[h.toLowerCase()] = false);
 
         if (resp.data?.data) {
-            // O TorBox retorna um objeto com hash: true/false
             Object.keys(resp.data.data).forEach(h => {
                 if (resp.data.data[h] === true) {
                     result[h.toLowerCase()] = true;
@@ -243,7 +256,7 @@ const configureHtml = `
     <div class="w-full max-w-md card rounded-2xl p-8 relative">
         <div class="text-center mb-8">
             <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2">Brazuca <span class="text-white">Direct</span></h1>
-            <p class="text-gray-400 text-xs">V11.0 FINAL</p>
+            <p class="text-gray-400 text-xs">V12.0 FINAL</p>
         </div>
         <form id="configForm" class="space-y-6">
             <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-blue-500 transition-colors">
@@ -439,5 +452,5 @@ app.get('/resolve/:service/:key/:hash', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-    console.log(`Brazuca v11 rodando na porta ${PORT}`);
+    console.log(`Brazuca v12 rodando na porta ${PORT}`);
 });
