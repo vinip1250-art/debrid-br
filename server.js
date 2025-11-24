@@ -7,11 +7,11 @@ const app = express();
 app.use(cors());
 
 // ============================================================
-// 1. MANIFESTO (Nome Limpo: "Brazuca")
+// 1. MANIFESTO (v5.1 - Nome Limpo & Ícone)
 // ============================================================
 const manifest = {
-    id: 'community.brazuca.pro.direct.v5',
-    version: '5.0.1',
+    id: 'community.brazuca.pro.direct.v5.1',
+    version: '5.1.0',
     name: 'Brazuca', // Nome curto e limpo
     description: 'Filmes e Séries Brasileiros (Real-Debrid & TorBox)',
     resources: ['stream'],
@@ -52,7 +52,7 @@ async function resolveRealDebrid(infoHash, apiKey) {
         });
         const torrentId = addResp.data.id;
 
-        // 2. Loop de Espera (Polling)
+        // 2. Loop de Espera (Polling) para Seleção
         const infoUrl = `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`;
         let attempts = 0;
         while (attempts < 5) {
@@ -140,7 +140,7 @@ async function checkTorBoxCache(hashes, apiKey) {
 }
 
 // ============================================================
-// 3. HTML CONFIG (LAYOUT ANTERIOR RESTAURADO)
+// 3. HTML CONFIG (LAYOUT MODERNO)
 // ============================================================
 const configureHtml = `
 <!DOCTYPE html>
@@ -169,7 +169,7 @@ const configureHtml = `
 
         <div class="text-center mb-8">
             <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2">Brazuca <span class="text-white">Direct</span></h1>
-            <p class="text-gray-400 text-xs">Integração Direta (Nome Limpo)</p>
+            <p class="text-gray-400 text-xs">Integração Direta (v5.1)</p>
         </div>
 
         <form id="configForm" class="space-y-6">
@@ -180,7 +180,7 @@ const configureHtml = `
                     <input type="checkbox" id="use_rd" class="w-5 h-5 accent-[#66fcf1]" onchange="validate()">
                     <span class="text-lg font-bold text-white">Real-Debrid</span>
                 </label>
-                <input type="text" id="rd_key" placeholder="Cole sua API Key do Real-Debrid" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600" disabled>
+                <input type="text" id="rd_key" placeholder="Cole sua API Key (F...)" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600" disabled>
                 <div class="text-right">
                     <a href="http://real-debrid.com/?id=6684575" target="_blank" class="link-ref">💎 Assinar Real-Debrid</a>
                 </div>
@@ -192,7 +192,7 @@ const configureHtml = `
                     <input type="checkbox" id="use_tb" class="w-5 h-5 accent-[#66fcf1]" onchange="validate()">
                     <span class="text-lg font-bold text-white">TorBox</span>
                 </label>
-                <input type="text" id="tb_key" placeholder="Cole sua API Key do TorBox" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600" disabled>
+                <input type="text" id="tb_key" placeholder="Cole sua API Key" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600" disabled>
                 <div class="text-right">
                     <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="link-ref text-purple-400">⚡ Assinar TorBox</a>
                 </div>
@@ -223,7 +223,6 @@ const configureHtml = `
             rdKey.parentElement.style.opacity = rd ? '1' : '0.6';
             tbKey.parentElement.style.opacity = tb ? '1' : '0.6';
 
-            // Verifica se tem chave preenchida
             const hasRd = rd && rdKey.value.trim().length > 5;
             const hasTb = tb && tbKey.value.trim().length > 5;
 
@@ -242,12 +241,9 @@ const configureHtml = `
             const rd = document.getElementById('use_rd').checked;
             const tb = document.getElementById('use_tb').checked;
             
-            // Determina qual serviço principal usar na config (ou ambos se tivesse suporte a array, mas aqui usamos objeto simples)
-            // No modo direto, o addon backend decide baseado no que está presente.
+            // Configuração Híbrida: Suporta um ou ambos
             const config = {
-                s: rd ? 'realdebrid' : (tb ? 'torbox' : ''), // Fallback visual
-                k: rd ? document.getElementById('rd_key').value.trim() : document.getElementById('tb_key').value.trim(),
-                // Passamos chaves duplas se existirem
+                s: 'multi', // Flag para indicar modo direto
                 rd: rd ? document.getElementById('rd_key').value.trim() : null,
                 tb: tb ? document.getElementById('tb_key').value.trim() : null
             };
@@ -283,9 +279,9 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     try { cfg = JSON.parse(Buffer.from(decodeURIComponent(req.params.config), 'base64').toString()); } 
     catch(e) { return res.json({ streams: [] }); }
 
-    // Suporte a chaves duplas ou simples
-    const rdKey = cfg.rd || (cfg.s === 'realdebrid' ? cfg.k : null);
-    const tbKey = cfg.tb || (cfg.s === 'torbox' ? cfg.k : null);
+    // Extrai chaves
+    const rdKey = cfg.rd;
+    const tbKey = cfg.tb;
 
     if (!rdKey && !tbKey) return res.json({ streams: [{ title: '⚠ Configure o Addon' }] });
 
@@ -370,5 +366,5 @@ app.get('/resolve/:service/:key/:hash', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-    console.log(`Brazuca Direct v5 rodando na porta ${PORT}`);
+    console.log(`Brazuca Direct v5.1 rodando na porta ${PORT}`);
 });
