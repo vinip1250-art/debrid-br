@@ -10,8 +10,8 @@ app.use(cors());
 // 1. MANIFESTO
 // ============================================================
 const manifest = {
-    id: 'community.brazuca.pro.direct.v12', // Versão incrementada
-    version: '12.0.0',
+    id: 'community.brazuca.pro.direct.v13', // Versão incrementada
+    version: '13.0.0',
     name: 'Brazuca',
     description: 'Brazuca Direct (TorBox Strict Fix)',
     resources: ['stream'],
@@ -129,11 +129,9 @@ async function resolveTorBox(infoHash, apiKey) {
             }
         );
 
-        // Se a criação falhar (ex: hash inválido), lança erro para ser capturado no catch
-        createResp.raiseForStatus();
-
+        // Se a criação falhar (ex: hash inválido), retorna o erro de dados da API.
         if (!createResp.data?.success)
-            return { url: null, error: "TorBox: criação falhou. Sem sucesso." };
+            return { url: null, error: `TorBox: criação falhou. Mensagem: ${createResp.data?.detail || createResp.data?.error || 'Erro desconhecido.'}` };
 
         const torrentId = createResp.data.data.torrent_id;
 
@@ -153,7 +151,7 @@ async function resolveTorBox(infoHash, apiKey) {
                 }
             );
 
-            // Se o request falhar aqui, o loop continua
+            // AQUI: Verifica se o status é 'downloaded' ou se 'files' existe.
             if (listResp.data.data?.files?.length > 0) {
                 const files = listResp.data.data.files;
                 // Pega o maior arquivo (vídeo principal)
@@ -182,19 +180,20 @@ async function resolveTorBox(infoHash, apiKey) {
         return { url: dlResp.data.data, error: null };
 
     } catch (e) {
-        // Captura o erro da API (401, 404, etc.)
-        const statusCode = e.response?.status;
-        const apiError = e.response?.data?.detail || e.response?.data?.error || e.message;
-        
-        let customMessage = `Erro API: ${apiError}`;
-        if (statusCode === 401) {
-            customMessage = "Chave TorBox Inválida. Verifique sua API Key.";
-        } else if (statusCode === 404) {
-             customMessage = "Recurso não encontrado (404). Hash ou Endpoint incorreto.";
+        // 💡 Correção: Captura o erro do axios e retorna a mensagem mais clara
+        if (axios.isAxiosError(e) && e.response) {
+            const status = e.response.status;
+            let msg = e.response.data?.detail || e.response.data?.error || e.message;
+            
+            if (status === 401) msg = "Chave TorBox Inválida. Verifique sua API Key.";
+            if (status === 404) msg = `Recurso TorBox não encontrado (404). URL: ${e.config.url}`; // Mostra a URL que deu 404
+            
+            console.error(`TorBox Fatal (${status}):`, msg);
+            return { url: null, error: `TorBox ERRO ${status}: ${msg}` };
         }
         
-        console.error("TorBox Fatal:", customMessage);
-        return { url: null, error: customMessage };
+        console.error("TorBox Fatal:", e.message);
+        return { url: null, error: `Erro TorBox Desconhecido: ${e.message}` };
     }
 }
 
@@ -226,6 +225,7 @@ async function checkTorBoxCache(hashes, apiKey) {
 
         return result;
     } catch (e) {
+        // Se a checagem de cache falhar, apenas retorna vazio
         return {};
     }
 }
@@ -256,7 +256,7 @@ const configureHtml = `
     <div class="w-full max-w-md card rounded-2xl p-8 relative">
         <div class="text-center mb-8">
             <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2">Brazuca <span class="text-white">Direct</span></h1>
-            <p class="text-gray-400 text-xs">V12.0 FINAL</p>
+            <p class="text-gray-400 text-xs">V13.0 FINAL</p>
         </div>
         <form id="configForm" class="space-y-6">
             <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-blue-500 transition-colors">
@@ -452,5 +452,5 @@ app.get('/resolve/:service/:key/:hash', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-    console.log(`Brazuca v12 rodando na porta ${PORT}`);
+    console.log(`Brazuca v13 rodando na porta ${PORT}`);
 });
