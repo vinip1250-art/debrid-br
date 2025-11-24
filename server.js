@@ -125,8 +125,8 @@ const generatorHtml = `
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">1. Servidor (Bridge)</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthru.elfhosted.com">ElfHosted (Recomendado)</option>
-                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
+                    <option value="https://stremthru.elfhosted.com">ElfHosted</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight</option>
                 </select>
             </div>
 
@@ -156,11 +156,11 @@ const generatorHtml = `
                             <input type="checkbox" id="use_rd" class="w-5 h-5 accent-blue-600 cursor-pointer" onchange="validate()">
                             <span class="text-sm font-bold text-white">Real-Debrid</span>
                         </div>
-                        <span class="text-[10px] text-gray-500">Store Token</span>
+                        <span class="text-[10px] text-gray-500">Ganhe 7 dias Bônus</span>
                     </div>
                     
                     <div class="flex gap-3 h-10">
-                        <input type="text" id="rd_key" placeholder="Cole o Token da Store 'rd'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
+                        <input type="text" id="rd_key" placeholder="Cole a chave API 'rd'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
                         <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd w-32 shadow-lg shadow-blue-900/20">
                             Assinar <i class="fas fa-external-link-alt ml-2"></i>
                         </a>
@@ -174,11 +174,11 @@ const generatorHtml = `
                             <input type="checkbox" id="use_tb" class="w-5 h-5 accent-purple-600 cursor-pointer" onchange="validate()">
                             <span class="text-sm font-bold text-white">TorBox</span>
                         </div>
-                        <span class="text-[10px] text-gray-500">Store Token</span>
+                        <span class="text-[10px] text-gray-500">Ganhe 7 dias Bônus</span>
                     </div>
                     
                     <div class="flex gap-3 h-10">
-                        <input type="text" id="tb_key" placeholder="Cole o Token da Store 'tb'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
+                        <input type="text" id="tb_key" placeholder="Cole a chave API 'tb'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
                         <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb w-32 shadow-lg shadow-purple-900/20">
                             Assinar <i class="fas fa-external-link-alt ml-2"></i>
                         </a>
