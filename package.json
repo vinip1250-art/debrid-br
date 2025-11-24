@@ -1,7 +1,7 @@
 {
-  "name": "brazuca-wrapper-custom",
-  "version": "6.1.0",
-  "description": "Brazuca Wrapper + Customization",
+  "name": "brazuca-wrapper",
+  "version": "1.0.0",
+  "description": "Brazuca Wrapper Generator DEBRID",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -15,5 +15,3 @@
     "axios": "^1.6.2"
   }
 }
-
-
