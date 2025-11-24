@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 const app = express();
 
 app.use(cors());
@@ -7,202 +8,165 @@ app.use(cors());
 // ============================================================
 // CONFIGURAÇÃO
 // ============================================================
-// Usamos o link ORIGINAL para garantir que o StremThru aceite a conexão
 const BRAZUCA_ORIGINAL = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json";
+const NEW_NAME = "Brazuca";
+const NEW_LOGO = "https://i.imgur.com/KVpfrAk.png";
+const NEW_ID = "community.brazuca.proxy.v7"; // força atualização
 
 // ============================================================
-// HTML DO GERADOR
+// ROTA 1: MANIFESTO EDITADO
+// ============================================================
+app.get('/addon/manifest.json', async (req, res) => {
+  try {
+    const response = await axios.get(BRAZUCA_ORIGINAL);
+    const manifest = response.data;
+
+    manifest.id = NEW_ID;
+    manifest.name = NEW_NAME;
+    manifest.logo = NEW_LOGO;
+    manifest.description = "Addon Brazuca via StremThru + Debrid";
+    manifest.version = "3.2.0";
+
+    res.json(manifest);
+  } catch (err) {
+    console.error("Erro ao carregar manifesto:", err.message);
+    res.json({
+      id: NEW_ID,
+      name: NEW_NAME,
+      logo: NEW_LOGO,
+      description: "Manifesto fallback Brazuca",
+      version: "3.2.0",
+      catalogs: [],
+      resources: ["stream"],
+      types: ["movie", "series"],
+      idPrefixes: ["tt"]
+    });
+  }
+});
+
+// ============================================================
+// ROTA 2: PÁGINA GERADORA
 // ============================================================
 const generatorHtml = `
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brazuca Wrapper Generator</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { background-color: #050505; color: #e2e8f0; font-family: sans-serif; }
-        .card { background-color: #111; border: 1px solid #333; }
-        .input-dark { background-color: #000; border: 1px solid #333; color: white; }
-        .input-dark:focus { border-color: #3b82f6; outline: none; }
-        .btn-action { background: linear-gradient(to right, #2563eb, #3b82f6); color: white; }
-        .btn-action:hover { filter: brightness(1.1); }
-        a.link-ref { color: #60a5fa; text-decoration: none; font-size: 0.7rem; margin-top: 4px; display: inline-block; }
-        a.link-ref:hover { text-decoration: underline; }
-        /* Esconde barra de rolagem */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: #000; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brazuca Addon Generator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #050505; color: #e2e8f0; font-family: sans-serif; }
+    .card { background-color: #111; border: 1px solid #333; }
+    .btn-subscribe {
+      display: block;
+      width: 100%;
+      text-align: center;
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: bold;
+      margin-top: 8px;
+      transition: transform 0.2s;
+    }
+    .btn-subscribe:hover { transform: scale(1.02); }
+    .btn-rd { background: linear-gradient(to right, #2563eb, #3b82f6); color: white; }
+    .btn-tb { background: linear-gradient(to right, #9333ea, #a855f7); color: white; }
+    .btn-action { background: linear-gradient(to right, #2563eb, #3b82f6); color: white; }
+    .btn-action:hover { filter: brightness(1.1); }
+  </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
 
-    <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-6 border border-gray-800 relative">
-        
-        <div class="text-center mb-6">
-            <h1 class="text-2xl font-bold text-white tracking-tight">Brazuca Wrapper</h1>
-            <p class="text-gray-500 text-xs mt-1">Gerador StremThru (Estável)</p>
-        </div>
-
-        <form class="space-y-5">
-            
-            <!-- Instância -->
-            <div>
-                <label class="text-xs font-bold text-gray-500 uppercase ml-1">1. Instância StremThru</label>
-                <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthru.elfhosted.com">ElfHosted (Recomendado)</option>
-                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight (Weebs)</option>
-                    <option value="https://api.stremthru.xyz">StremThru Oficial</option>
-                    <option value="custom">Outra...</option>
-                </select>
-                <input type="text" id="custom_instance" placeholder="https://..." class="hidden w-full input-dark p-3 rounded-lg text-sm mt-2">
-            </div>
-
-            <!-- Debrids -->
-            <div class="space-y-4">
-                <label class="text-xs font-bold text-gray-500 uppercase ml-1">2. Serviços (Store Tokens)</label>
-                
-                <!-- Real Debrid -->
-                <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800 hover:border-blue-900/50 transition">
-                    <div class="flex items-center gap-2 mb-1">
-                        <input type="checkbox" id="use_rd" class="accent-blue-600 w-4 h-4" onchange="validate()">
-                        <span class="text-sm font-bold text-gray-300">Real-Debrid</span>
-                    </div>
-                    <input type="text" id="rd_key" placeholder="Cole o Token da Store 'rd'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-blue-500 focus:bg-black transition-colors" disabled>
-                    <div class="text-right">
-                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="link-ref">💎 Assinar Real-Debrid ↗</a>
-                    </div>
-                </div>
-
-                <!-- TorBox -->
-                <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800 hover:border-purple-900/50 transition">
-                    <div class="flex items-center gap-2 mb-1">
-                        <input type="checkbox" id="use_tb" class="accent-purple-600 w-4 h-4" onchange="validate()">
-                        <span class="text-sm font-bold text-gray-300">TorBox</span>
-                    </div>
-                    <input type="text" id="tb_key" placeholder="Cole o Token da Store 'tb'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-purple-500 focus:bg-black transition-colors" disabled>
-                    <div class="text-right">
-                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="link-ref text-purple-400">⚡ Assinar TorBox ↗</a>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Resultado -->
-            <div id="resultArea" class="hidden pt-4 border-t border-gray-800 space-y-3">
-                <div class="relative">
-                    <input type="text" id="finalUrl" readonly class="w-full bg-gray-900 border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono focus:outline-none">
-                    <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">
-                        COPY
-                    </button>
-                </div>
-                
-                <div class="text-[10px] text-gray-500 text-center italic">
-                    Se o botão instalar falhar, copie a URL acima e cole no Stremio.
-                </div>
-
-                <a id="installBtn" href="#" class="block w-full btn-action py-3 rounded-lg text-center font-bold text-sm uppercase tracking-wide shadow-lg shadow-blue-900/20 transform transition hover:scale-[1.02]">
-                    INSTALAR NO STREMIO
-                </a>
-            </div>
-
-            <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-800 text-gray-500 py-3 rounded-lg text-sm font-bold cursor-not-allowed transition" disabled>
-                GERAR CONFIGURAÇÃO
-            </button>
-
-        </form>
+  <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-6 border border-gray-800 relative">
+    <div class="text-center mb-6">
+      <img src="${NEW_LOGO}" class="w-16 h-16 mx-auto mb-2 rounded-full border border-gray-700">
+      <h1 class="text-2xl font-bold text-white">Brazuca</h1>
+      <p class="text-gray-500 text-xs">Gerador StremThru + Debrid</p>
     </div>
 
-    <script>
-        const instanceSelect = document.getElementById('instance');
-        const customInput = document.getElementById('custom_instance');
-        const BRAZUCA_URL = "${BRAZUCA_ORIGINAL}";
+    <form class="space-y-5">
+      <!-- Serviços -->
+      <div class="space-y-4">
+        <label class="text-xs font-bold text-gray-500 uppercase ml-1">Serviços (Tokens StremThru)</label>
+        
+        <!-- Real Debrid -->
+        <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800">
+          <div class="flex items-center gap-2 mb-1">
+            <input type="checkbox" id="use_rd" class="accent-blue-600 w-4 h-4" onchange="validate()">
+            <span class="text-sm font-bold text-gray-300">Real-Debrid</span>
+          </div>
+          <input type="text" id="rd_key" placeholder="Cole o Token da Store 'rd'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-blue-500 focus:bg-black transition-colors" disabled>
+          <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-subscribe btn-rd">💎 Assinar Real-Debrid</a>
+        </div>
 
-        instanceSelect.addEventListener('change', (e) => {
-            customInput.classList.toggle('hidden', e.target.value !== 'custom');
-        });
+        <!-- TorBox -->
+        <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800">
+          <div class="flex items-center gap-2 mb-1">
+            <input type="checkbox" id="use_tb" class="accent-purple-600 w-4 h-4" onchange="validate()">
+            <span class="text-sm font-bold text-gray-300">TorBox</span>
+          </div>
+          <input type="text" id="tb_key" placeholder="Cole o Token da Store 'tb'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-purple-500 focus:bg-black transition-colors" disabled>
+          <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-subscribe btn-tb">⚡ Assinar TorBox</a>
+        </div>
+      </div>
 
-        function validate() {
-            const rd = document.getElementById('use_rd').checked;
-            const tb = document.getElementById('use_tb').checked;
-            const rdInput = document.getElementById('rd_key');
-            const tbInput = document.getElementById('tb_key');
-            const btn = document.getElementById('btnGenerate');
+      <!-- Resultado -->
+      <div id="resultArea" class="hidden pt-4 border-t border-gray-800 space-y-3">
+        <div class="relative">
+          <input type="text" id="finalUrl" readonly class="w-full bg-gray-900 border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono">
+          <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">
+            COPY
+          </button>
+        </div>
+        <a id="installBtn" href="#" class="block w-full btn-action py-3 rounded-lg text-center font-bold text-sm uppercase tracking-wide shadow-lg shadow-blue-900/20">
+          INSTALAR NO STREMIO
+        </a>
+      </div>
 
-            rdInput.disabled = !rd;
-            tbInput.disabled = !tb;
-            
-            if(!rd) rdInput.value = '';
-            if(!tb) tbInput.value = '';
-            
-            rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
-            tbInput.parentElement.style.opacity = tb ? '1' : '0.5';
+      <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-800 text-gray-500 py-3 rounded-lg text-sm font-bold cursor-not-allowed transition" disabled>
+        GERAR LINK
+      </button>
+    </form>
+  </div>
 
-            const isValid = (rd && rdInput.value.trim()) || (tb && tbInput.value.trim());
+  <script>
+    function validate() {
+      const rd = document.getElementById('use_rd').checked;
+      const tb = document.getElementById('use_tb').checked;
+      const rdInput = document.getElementById('rd_key');
+      const tbInput = document.getElementById('tb_key');
+      const btn = document.getElementById('btnGenerate');
 
-            if(isValid) {
-                btn.classList.replace('bg-gray-800', 'btn-action');
-                btn.classList.replace('text-gray-500', 'text-white');
-                btn.classList.remove('cursor-not-allowed');
-                btn.disabled = false;
-            } else {
-                btn.classList.replace('btn-action', 'bg-gray-800');
-                btn.classList.replace('text-white', 'text-gray-500');
-                btn.classList.add('cursor-not-allowed');
-                btn.disabled = true;
-            }
-        }
+      rdInput.disabled = !rd;
+      tbInput.disabled = !tb;
+      if(!rd) rdInput.value = '';
+      if(!tb) tbInput.value = '';
 
-        document.getElementById('rd_key').addEventListener('input', validate);
-        document.getElementById('tb_key').addEventListener('input', validate);
+      const isValid = (rd && rdInput.value.trim()) || (tb && tbInput.value.trim());
+      btn.disabled = !isValid;
+      if(isValid) {
+        btn.classList.replace('bg-gray-800', 'btn-action');
+        btn.classList.replace('text-gray-500', 'text-white');
+        btn.classList.remove('cursor-not-allowed');
+      } else {
+        btn.classList.replace('btn-action', 'bg-gray-800');
+        btn.classList.replace('text-white', 'text-gray-500');
+        btn.classList.add('cursor-not-allowed');
+      }
+    }
 
-        function generate() {
-            let host = instanceSelect.value === 'custom' ? customInput.value.trim() : instanceSelect.value;
-            host = host.replace(/\\/$/, '').replace('http:', 'https:');
+    document.getElementById('rd_key').addEventListener('input', validate);
+    document.getElementById('tb_key').addEventListener('input', validate);
 
-            let config = { upstreams: [], stores: [] };
+    function generate() {
+      const BRAZUCA_URL = "${BRAZUCA_ORIGINAL}";
+      let host = document.getElementById('instance').value;
+      if(host === 'custom') host = document.getElementById('custom_instance').value.trim();
+      host = host.replace(/\\/$/, '').replace('http:', 'https:');
 
-            // Lógica de Duplicação para Dual-Service
-            // Adicionamos o upstream original diretamente
-            if (document.getElementById('use_rd').checked) {
-                config.upstreams.push({ u: BRAZUCA_URL });
-                config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
-            }
-            if (document.getElementById('use_tb').checked) {
-                config.upstreams.push({ u: BRAZUCA_URL });
-                config.stores.push({ c: "tb", t: document.getElementById('tb_key').value.trim() });
-            }
-
-            const b64 = btoa(JSON.stringify(config));
-            
-            const hostClean = host.replace(/^https?:\\/\\//, '');
-            const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
-            const stremioUrl = \`stremio://\${hostClean}/stremio/wrap/\${b64}/manifest.json\`;
-
-            document.getElementById('finalUrl').value = httpsUrl;
-            document.getElementById('installBtn').href = stremioUrl;
-            
-            document.getElementById('btnGenerate').classList.add('hidden');
-            document.getElementById('resultArea').classList.remove('hidden');
-        }
-
-        function copyLink() {
-            const el = document.getElementById('finalUrl');
-            el.select();
-            document.execCommand('copy');
-            const btn = document.querySelector('button[onclick="copyLink()"]');
-            const originalText = btn.innerText;
-            btn.innerText = "OK";
-            setTimeout(() => btn.innerText = originalText, 1500);
-        }
-    </script>
-</body>
-</html>
-`;
-
-app.get('/', (req, res) => res.send(generatorHtml));
-
-const PORT = process.env.PORT || 7000;
-app.listen(PORT, () => {
-    console.log(`Gerador rodando na porta ${PORT}`);
-});
+      let config = { upstreams: [], stores: [] };
+      if (document.getElementById('use_rd').checked) {
+        config.upstreams.push({ u: BRAZUCA_URL });
+        config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
+      }
+      if (document.getElement
