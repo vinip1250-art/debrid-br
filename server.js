@@ -11,7 +11,7 @@ app.use(cors());
 const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
 const DEFAULT_NAME = "Brazuca"; 
 const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
-const PROJECT_VERSION = "35.0.0"; // Versão final com correção cosmética
+const PROJECT_VERSION = "1.0.0"; 
 
 // ============================================================
 // 2. ROTA DO MANIFESTO (Proxy para Renomear/Trocar Ícone)
@@ -19,10 +19,10 @@ const PROJECT_VERSION = "35.0.0"; // Versão final com correção cosmética
 app.get('/addon/manifest.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 'public, max-age=60'); 
+    res.setHeader('Cache-Control', 'public, max-age=60'); // Cache curto
     
     try {
-        // Captura personalização da URL
+        // Captura personalização da URL (query params)
         const customName = req.query.name || DEFAULT_NAME;
         const customLogo = req.query.logo || DEFAULT_LOGO;
         
@@ -30,17 +30,17 @@ app.get('/addon/manifest.json', async (req, res) => {
         const response = await axios.get(`${BRAZUCA_UPSTREAM}/manifest.json`);
         const manifest = response.data;
 
-        // 2. Gera ID único
+        // 2. Gera ID único baseado no nome (para o Stremio não confundir)
         const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
         
         // 3. Aplica as mudanças visuais
         manifest.id = `community.brazuca.wrapper.${idSuffix}`;
-        manifest.name = customName; // Nome curto
-        manifest.description = `Wrapper customizado: ${customName}`;
+        manifest.name = customName;
+        manifest.description = "Filmes e Séries Brasileiros via StremThru";
         manifest.logo = customLogo;
         manifest.version = PROJECT_VERSION; 
         
-        delete manifest.background; 
+        delete manifest.background; // Remove background para limpar visual
         
         res.json(manifest);
     } catch (error) {
@@ -50,8 +50,9 @@ app.get('/addon/manifest.json', async (req, res) => {
 });
 
 // ============================================================
-// 3. ROTA REDIRECIONADORA
+// 3. ROTA REDIRECIONADORA (Streams/Catalogos)
 // ============================================================
+// Redireciona tudo que não for manifesto para o Brazuca original
 app.use('/addon', (req, res) => {
     res.redirect(307, `${BRAZUCA_UPSTREAM}${req.path}`);
 });
@@ -74,22 +75,42 @@ const generatorHtml = `
         .input-dark { background-color: #0a0a0a; border: 1px solid #333; color: white; transition: 0.2s; }
         .input-dark:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
         
-        .btn-action { background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%); color: white; font-weight: bold; transition: all 0.3s ease; }
+        .btn-action { 
+            background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%); 
+            color: white; font-weight: bold; 
+            transition: all 0.3s ease;
+        }
         .btn-action:hover { transform: translateY(-2px); shadow: 0 10px 20px rgba(37, 99, 235, 0.3); }
         
-        .btn-sub-rd { background: #1e40af; color: #93c5fd; font-weight: 600; display: flex; align-items: center; justify-content: center; height: 100%; border-radius: 0.5rem; transition: 0.2s; font-size: 0.75rem; text-transform: uppercase; border: 1px solid #1d4ed8; }
-        .btn-sub-rd:hover { background: #1d4ed8; color: white; }
-        
-        .btn-sub-tb { background: #5b21b6; color: #d8b4fe; font-weight: 600; display: flex; align-items: center; justify-content: center; height: 100%; border-radius: 0.5rem; transition: 0.2s; font-size: 0.75rem; text-transform: uppercase; border: 1px solid #7c3aed; }
-        .btn-sub-tb:hover { background: #7c3aed; color: white; }
-        
         .divider { border-top: 1px solid #262626; margin: 25px 0; position: relative; }
-        .divider span { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #141414; padding: 0 10px; color: #525252; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; font-weight: bold; }
+        .divider span { 
+            position: absolute; top: -10px; left: 50%; transform: translateX(-50%); 
+            background: #141414; padding: 0 10px; color: #525252; font-size: 0.7rem; 
+            text-transform: uppercase; letter-spacing: 1px; font-weight: bold;
+        }
+
+        /* Botões de Assinatura */
+        .btn-sub-rd {
+            background: #1e40af; color: #93c5fd; font-weight: 600;
+            display: flex; align-items: center; justify-content: center;
+            height: 100%; border-radius: 0.5rem; transition: 0.2s;
+            font-size: 0.75rem; text-transform: uppercase; border: 1px solid #1d4ed8;
+        }
+        .btn-sub-rd:hover { background: #1d4ed8; color: white; }
+
+        .btn-sub-tb {
+            background: #5b21b6; color: #d8b4fe; font-weight: 600;
+            display: flex; align-items: center; justify-content: center;
+            height: 100%; border-radius: 0.5rem; transition: 0.2s;
+            font-size: 0.75rem; text-transform: uppercase; border: 1px solid #7c3aed;
+        }
+        .btn-sub-tb:hover { background: #7c3aed; color: white; }
+
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 bg-black">
 
-    <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-6 border border-gray-800 relative">
+    <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-8 border border-gray-800 relative">
         
         <!-- Header -->
         <div class="text-center mb-8">
@@ -110,7 +131,7 @@ const generatorHtml = `
             </div>
 
             <!-- Personalização -->
-            <div class="divider"><span>Personalização (Sidekick Free)</span></div>
+            <div class="divider"><span>Personalização (Opcional)</span></div>
             
             <div class="grid grid-cols-2 gap-3">
                 <div>
@@ -122,11 +143,6 @@ const generatorHtml = `
                     <input type="text" id="custom_logo" value="${DEFAULT_LOGO}" class="w-full input-dark p-2 rounded text-sm mt-1" onchange="updatePreview()">
                 </div>
             </div>
-            
-            <p class="text-xs text-blue-400">
-                O prefixo "StremThru(RD|TB)" é obrigatório, mas o nome que você digitar acima aparecerá na frente dele.
-            </p>
-
 
             <!-- 2. Debrids (Tokens) -->
             <div class="divider"><span>Serviços Debrid</span></div>
@@ -140,12 +156,14 @@ const generatorHtml = `
                             <input type="checkbox" id="use_rd" class="w-5 h-5 accent-blue-600 cursor-pointer" onchange="validate()">
                             <span class="text-sm font-bold text-white">Real-Debrid</span>
                         </div>
-                        <span class="text-[10px] text-gray-500">Store Token</span>
+                        <span class="text-[10px] text-gray-500">Ganhe 7 dias Bônus</span>
                     </div>
                     
                     <div class="flex gap-3 h-10">
-                        <input type="text" id="rd_key" placeholder="Cole o Token da Store 'rd'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
-                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd w-32 shadow-lg shadow-blue-900/20">Assinar <i class="fas fa-external-link-alt ml-2"></i></a>
+                        <input type="text" id="rd_key" placeholder="Cole a chave API 'rd'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
+                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd w-32 shadow-lg shadow-blue-900/20">
+                            Assinar <i class="fas fa-external-link-alt ml-2"></i>
+                        </a>
                     </div>
                 </div>
 
@@ -156,12 +174,14 @@ const generatorHtml = `
                             <input type="checkbox" id="use_tb" class="w-5 h-5 accent-purple-600 cursor-pointer" onchange="validate()">
                             <span class="text-sm font-bold text-white">TorBox</span>
                         </div>
-                        <span class="text-[10px] text-gray-500">Store Token</span>
+                        <span class="text-[10px] text-gray-500">Ganhe 7 dias Bônus</span>
                     </div>
                     
                     <div class="flex gap-3 h-10">
-                        <input type="text" id="tb_key" placeholder="Cole o Token da Store 'tb'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
-                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb w-32 shadow-lg shadow-purple-900/20">Assinar <i class="fas fa-external-link-alt ml-2"></i></a>
+                        <input type="text" id="tb_key" placeholder="Cole a chave API 'tb'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
+                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb w-32 shadow-lg shadow-purple-900/20">
+                            Assinar <i class="fas fa-external-link-alt ml-2"></i>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -169,7 +189,7 @@ const generatorHtml = `
             <!-- Resultado -->
             <div id="resultArea" class="hidden pt-4 border-t border-gray-800 space-y-3">
                 <div class="relative">
-                    <input type="text" id="finalUrl" readonly class="w-full bg-black border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono outline-none">
+                    <input type="text" id="finalUrl" readonly class="w-full bg-black border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono focus:outline-none">
                     <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">COPY</button>
                 </div>
                 
@@ -187,8 +207,8 @@ const generatorHtml = `
 
     <script>
         const instanceSelect = document.getElementById('instance');
-        const customInput = document.getElementById('custom_input'); // Removido do HTML
-        
+        const customInput = document.getElementById('custom_instance');
+
         function updatePreview() {
             const url = document.getElementById('custom_logo').value.trim();
             if(url) document.getElementById('previewLogo').src = url;
@@ -207,6 +227,7 @@ const generatorHtml = `
             if(!rd) rdInput.value = '';
             if(!tb) tbInput.value = '';
             
+            // Opacity visual
             rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
             tbInput.parentElement.style.opacity = tb ? '1' : '0.5';
 
@@ -241,13 +262,16 @@ const generatorHtml = `
             if(cLogo) proxyParams += \`&logo=\${encodeURIComponent(cLogo)}\`;
 
             // Nossa URL de Proxy (que serve o manifesto editado)
+            // Adiciona timestamp para evitar cache
             const myMirrorUrl = window.location.origin + "/addon/manifest.json" + proxyParams + "&t=" + Date.now();
 
             // 2. Montar Upstreams
             let config = { upstreams: [], stores: [] };
+            
+            // Adiciona Brazuca (via nosso Proxy)
             config.upstreams.push({ u: myMirrorUrl });
 
-            // 3. Montar Stores
+            // 3. Montar Stores (Debrids)
             if (document.getElementById('use_rd').checked) {
                 config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
             }
@@ -292,6 +316,7 @@ app.get('*', (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 
+// Adaptação para Vercel Serverless (se necessário)
 if (process.env.VERCEL) {
     module.exports = app;
 } else {
@@ -299,4 +324,3 @@ if (process.env.VERCEL) {
         console.log(`Gerador rodando na porta ${PORT}`);
     });
 }
-
