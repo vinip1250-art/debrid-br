@@ -11,7 +11,7 @@ app.use(cors());
 const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
 const DEFAULT_NAME = "Brazuca"; 
 const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
-const PROJECT_VERSION = "35.0.0"; 
+const PROJECT_VERSION = "1.0.0"; // Versão final
 
 // ============================================================
 // 2. ROTA DO MANIFESTO (Proxy para Renomear/Trocar Ícone)
@@ -53,7 +53,7 @@ app.use('/addon', (req, res) => {
 });
 
 // ============================================================
-// 4. INTERFACE DO GERADOR (FINAL CLEAN)
+// 4. INTERFACE DO GERADOR (FINAL)
 // ============================================================
 const generatorHtml = `
 <!DOCTYPE html>
@@ -78,18 +78,13 @@ const generatorHtml = `
         .btn-action:hover { transform: translateY(-2px); shadow: 0 10px 20px rgba(37, 99, 235, 0.3); }
         
         /* Botões de Assinatura */
-        .btn-sub-rd { background: #1e40af; color: #93c5fd; font-weight: 600; font-size: 0.75rem; padding: 6px; border-radius: 4px; border: 1px solid #2563eb; }
+        .btn-sub-rd { background: #1e40af; color: #93c5fd; font-weight: 600; font-size: 0.75rem; padding: 10px 12px; border-radius: 0.5rem; border: 1px solid #2563eb; }
         .btn-sub-rd:hover { background: #2563eb; color: white; }
 
-        .btn-sub-tb { background: #5b21b6; color: #d8b4fe; font-weight: 600; font-size: 0.75rem; padding: 6px; border-radius: 4px; border: 1px solid #9333ea; }
-        .btn-sub-tb:hover { background: #7c3aed; color: white; }
+        .btn-sub-tb { background: #5b21b6; color: #d8b4fe; font-weight: 600; font-size: 0.75rem; padding: 10px 12px; border-radius: 0.5rem; border: 1px solid #9333ea; }
+        .btn-sub-tb:hover { background: #7e22ce; color: white; }
         
         .divider { border-top: 1px solid #262626; margin: 25px 0; position: relative; }
-        .divider span { 
-            position: absolute; top: -10px; left: 50%; transform: translateX(-50%); 
-            background: #141414; padding: 0 10px; color: #525252; font-size: 0.7rem; 
-            text-transform: uppercase; letter-spacing: 1px; font-weight: bold;
-        }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 bg-black">
@@ -115,8 +110,7 @@ const generatorHtml = `
             </div>
 
             <!-- Personalização -->
-            <div class="divider"><span>Personalização (Sidekick Free)</span></div>
-            
+            <div class="divider"></div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="text-[10px] font-bold text-gray-500 uppercase">Nome do Addon</label>
@@ -129,7 +123,7 @@ const generatorHtml = `
             </div>
 
             <!-- 2. Debrids (Tokens) -->
-            <div class="divider"><span>Serviços Debrid (API KEY)</span></div>
+            <div class="divider"></div>
             
             <div class="space-y-4">
                 
@@ -140,16 +134,12 @@ const generatorHtml = `
                         <span class="text-sm font-bold text-white">Real-Debrid</span>
                     </div>
                     
-                    <input type="text" id="rd_key" placeholder="Cole sua API KEY" class="w-full input-dark px-3 rounded-lg text-xs mb-3" disabled>
+                    <input type="text" id="rd_key" placeholder="Cole sua API KEY" class="w-full input-dark px-4 py-3 rounded-lg text-sm mb-4" disabled>
                     
-                    <div class="grid grid-cols-2 gap-2">
-                         <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd shadow-lg shadow-blue-900/20">
-                            Assinar <i class="fas fa-external-link-alt ml-1"></i>
-                        </a>
-                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd shadow-lg shadow-blue-900/20">
-                            Assinar <i class="fas fa-external-link-alt ml-1"></i>
-                        </a>
-                    </div>
+                    <!-- Botão de Assinatura Único e Alinhado -->
+                    <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd w-full shadow-lg shadow-blue-900/20">
+                        Assinar Real-Debrid <i class="fas fa-external-link-alt ml-2"></i>
+                    </a>
                 </div>
 
                 <!-- TorBox -->
@@ -159,16 +149,12 @@ const generatorHtml = `
                         <span class="text-sm font-bold text-white">TorBox</span>
                     </div>
                     
-                    <input type="text" id="tb_key" placeholder="Cole sua API KEY" class="w-full input-dark px-3 rounded-lg text-xs mb-3" disabled>
+                    <input type="text" id="tb_key" placeholder="Cole sua API KEY" class="w-full input-dark px-4 py-3 rounded-lg text-sm mb-4" disabled>
                     
-                    <div class="grid grid-cols-2 gap-2">
-                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb shadow-lg shadow-purple-900/20">
-                            Assinar <i class="fas fa-external-link-alt ml-1"></i>
-                        </a>
-                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb shadow-lg shadow-purple-900/20">
-                            Assinar <i class="fas fa-external-link-alt ml-1"></i>
-                        </a>
-                    </div>
+                    <!-- Botão de Assinatura Único e Alinhado -->
+                    <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb w-full shadow-lg shadow-purple-900/20">
+                        Assinar TorBox <i class="fas fa-external-link-alt ml-2"></i>
+                    </a>
                 </div>
             </div>
 
