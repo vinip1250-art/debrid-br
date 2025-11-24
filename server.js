@@ -11,7 +11,7 @@ app.use(cors());
 const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
 const DEFAULT_NAME = "Brazuca"; 
 const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
-const PROJECT_VERSION = "1.0.0"; 
+const PROJECT_VERSION = "35.0.0"; 
 
 // ============================================================
 // 2. ROTA DO MANIFESTO (Proxy para Renomear/Trocar Ícone)
@@ -19,28 +19,24 @@ const PROJECT_VERSION = "1.0.0";
 app.get('/addon/manifest.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 'public, max-age=60'); // Cache curto
+    res.setHeader('Cache-Control', 'public, max-age=60'); 
     
     try {
-        // Captura personalização da URL (query params)
         const customName = req.query.name || DEFAULT_NAME;
         const customLogo = req.query.logo || DEFAULT_LOGO;
         
-        // 1. Baixa o manifesto original
         const response = await axios.get(`${BRAZUCA_UPSTREAM}/manifest.json`);
         const manifest = response.data;
 
-        // 2. Gera ID único baseado no nome (para o Stremio não confundir)
         const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
         
-        // 3. Aplica as mudanças visuais
         manifest.id = `community.brazuca.wrapper.${idSuffix}`;
-        manifest.name = customName;
+        manifest.name = customName; 
         manifest.description = "Filmes e Séries Brasileiros via StremThru";
         manifest.logo = customLogo;
         manifest.version = PROJECT_VERSION; 
         
-        delete manifest.background; // Remove background para limpar visual
+        delete manifest.background; 
         
         res.json(manifest);
     } catch (error) {
@@ -50,15 +46,14 @@ app.get('/addon/manifest.json', async (req, res) => {
 });
 
 // ============================================================
-// 3. ROTA REDIRECIONADORA (Streams/Catalogos)
+// 3. ROTA REDIRECIONADORA
 // ============================================================
-// Redireciona tudo que não for manifesto para o Brazuca original
 app.use('/addon', (req, res) => {
     res.redirect(307, `${BRAZUCA_UPSTREAM}${req.path}`);
 });
 
 // ============================================================
-// 4. INTERFACE DO GERADOR
+// 4. INTERFACE DO GERADOR (FINAL CLEAN)
 // ============================================================
 const generatorHtml = `
 <!DOCTYPE html>
@@ -82,30 +77,19 @@ const generatorHtml = `
         }
         .btn-action:hover { transform: translateY(-2px); shadow: 0 10px 20px rgba(37, 99, 235, 0.3); }
         
+        /* Botões de Assinatura */
+        .btn-sub-rd { background: #1e40af; color: #93c5fd; font-weight: 600; font-size: 0.75rem; padding: 6px; border-radius: 4px; border: 1px solid #2563eb; }
+        .btn-sub-rd:hover { background: #2563eb; color: white; }
+
+        .btn-sub-tb { background: #5b21b6; color: #d8b4fe; font-weight: 600; font-size: 0.75rem; padding: 6px; border-radius: 4px; border: 1px solid #9333ea; }
+        .btn-sub-tb:hover { background: #7c3aed; color: white; }
+        
         .divider { border-top: 1px solid #262626; margin: 25px 0; position: relative; }
         .divider span { 
             position: absolute; top: -10px; left: 50%; transform: translateX(-50%); 
             background: #141414; padding: 0 10px; color: #525252; font-size: 0.7rem; 
             text-transform: uppercase; letter-spacing: 1px; font-weight: bold;
         }
-
-        /* Botões de Assinatura */
-        .btn-sub-rd {
-            background: #1e40af; color: #93c5fd; font-weight: 600;
-            display: flex; align-items: center; justify-content: center;
-            height: 100%; border-radius: 0.5rem; transition: 0.2s;
-            font-size: 0.75rem; text-transform: uppercase; border: 1px solid #1d4ed8;
-        }
-        .btn-sub-rd:hover { background: #1d4ed8; color: white; }
-
-        .btn-sub-tb {
-            background: #5b21b6; color: #d8b4fe; font-weight: 600;
-            display: flex; align-items: center; justify-content: center;
-            height: 100%; border-radius: 0.5rem; transition: 0.2s;
-            font-size: 0.75rem; text-transform: uppercase; border: 1px solid #7c3aed;
-        }
-        .btn-sub-tb:hover { background: #7c3aed; color: white; }
-
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 bg-black">
@@ -125,13 +109,13 @@ const generatorHtml = `
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">1. Servidor (Bridge)</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthru.elfhosted.com">ElfHosted</option>
+                    <option value="https://stremthru.elfhosted.com">Elfhosted</option>
                     <option value="https://stremthrufortheweebs.midnightignite.me">Midnight</option>
                 </select>
             </div>
 
             <!-- Personalização -->
-            <div class="divider"><span>Personalização (Opcional)</span></div>
+            <div class="divider"><span>Personalização (Sidekick Free)</span></div>
             
             <div class="grid grid-cols-2 gap-3">
                 <div>
@@ -145,42 +129,44 @@ const generatorHtml = `
             </div>
 
             <!-- 2. Debrids (Tokens) -->
-            <div class="divider"><span>Serviços Debrid</span></div>
+            <div class="divider"><span>Serviços Debrid (API KEY)</span></div>
             
             <div class="space-y-4">
                 
                 <!-- Real Debrid -->
                 <div class="bg-[#1a1a1a] p-4 rounded-xl border border-gray-800">
-                    <div class="flex justify-between items-center mb-3">
-                        <div class="flex items-center gap-2">
-                            <input type="checkbox" id="use_rd" class="w-5 h-5 accent-blue-600 cursor-pointer" onchange="validate()">
-                            <span class="text-sm font-bold text-white">Real-Debrid</span>
-                        </div>
-                        <span class="text-[10px] text-gray-500">Ganhe 7 dias Bônus</span>
+                    <div class="flex items-center gap-2 mb-3">
+                        <input type="checkbox" id="use_rd" class="w-5 h-5 accent-blue-600 cursor-pointer" onchange="validate()">
+                        <span class="text-sm font-bold text-white">Real-Debrid</span>
                     </div>
                     
-                    <div class="flex gap-3 h-10">
-                        <input type="text" id="rd_key" placeholder="Cole a chave API 'rd'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
-                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd w-32 shadow-lg shadow-blue-900/20">
-                            Assinar <i class="fas fa-external-link-alt ml-2"></i>
+                    <input type="text" id="rd_key" placeholder="Cole sua API KEY" class="w-full input-dark px-3 rounded-lg text-xs mb-3" disabled>
+                    
+                    <div class="grid grid-cols-2 gap-2">
+                         <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd shadow-lg shadow-blue-900/20">
+                            Assinar <i class="fas fa-external-link-alt ml-1"></i>
+                        </a>
+                        <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd shadow-lg shadow-blue-900/20">
+                            Assinar <i class="fas fa-external-link-alt ml-1"></i>
                         </a>
                     </div>
                 </div>
 
                 <!-- TorBox -->
                 <div class="bg-[#1a1a1a] p-4 rounded-xl border border-gray-800">
-                    <div class="flex justify-between items-center mb-3">
-                        <div class="flex items-center gap-2">
-                            <input type="checkbox" id="use_tb" class="w-5 h-5 accent-purple-600 cursor-pointer" onchange="validate()">
-                            <span class="text-sm font-bold text-white">TorBox</span>
-                        </div>
-                        <span class="text-[10px] text-gray-500">Ganhe 7 dias Bônus</span>
+                    <div class="flex items-center gap-2 mb-3">
+                        <input type="checkbox" id="use_tb" class="w-5 h-5 accent-purple-600 cursor-pointer" onchange="validate()">
+                        <span class="text-sm font-bold text-white">TorBox</span>
                     </div>
                     
-                    <div class="flex gap-3 h-10">
-                        <input type="text" id="tb_key" placeholder="Cole a chave API 'tb'" class="flex-1 input-dark px-3 rounded-lg text-xs" disabled>
-                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb w-32 shadow-lg shadow-purple-900/20">
-                            Assinar <i class="fas fa-external-link-alt ml-2"></i>
+                    <input type="text" id="tb_key" placeholder="Cole sua API KEY" class="w-full input-dark px-3 rounded-lg text-xs mb-3" disabled>
+                    
+                    <div class="grid grid-cols-2 gap-2">
+                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb shadow-lg shadow-purple-900/20">
+                            Assinar <i class="fas fa-external-link-alt ml-1"></i>
+                        </a>
+                        <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb shadow-lg shadow-purple-900/20">
+                            Assinar <i class="fas fa-external-link-alt ml-1"></i>
                         </a>
                     </div>
                 </div>
@@ -189,7 +175,7 @@ const generatorHtml = `
             <!-- Resultado -->
             <div id="resultArea" class="hidden pt-4 border-t border-gray-800 space-y-3">
                 <div class="relative">
-                    <input type="text" id="finalUrl" readonly class="w-full bg-black border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono focus:outline-none">
+                    <input type="text" id="finalUrl" readonly class="w-full bg-black border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono outline-none">
                     <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">COPY</button>
                 </div>
                 
@@ -207,8 +193,7 @@ const generatorHtml = `
 
     <script>
         const instanceSelect = document.getElementById('instance');
-        const customInput = document.getElementById('custom_instance');
-
+        
         function updatePreview() {
             const url = document.getElementById('custom_logo').value.trim();
             if(url) document.getElementById('previewLogo').src = url;
@@ -227,11 +212,10 @@ const generatorHtml = `
             if(!rd) rdInput.value = '';
             if(!tb) tbInput.value = '';
             
-            // Opacity visual
             rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
             tbInput.parentElement.style.opacity = tb ? '1' : '0.5';
 
-            const isValid = (rd && rdInput.value.trim()) || (tb && tbInput.value.trim());
+            const isValid = (rd && rdInput.value.trim().length > 5) || (tb && tbInput.value.trim().length > 5);
 
             if(isValid) {
                 btn.classList.replace('bg-gray-800', 'btn-action');
@@ -254,24 +238,17 @@ const generatorHtml = `
             host = host.replace(/\\/$/, '').replace('http:', 'https:');
             if (!host.startsWith('http')) host = 'https://' + host;
 
-            // 1. Personalização
             const cName = document.getElementById('custom_name').value.trim();
             const cLogo = document.getElementById('custom_logo').value.trim();
             
             let proxyParams = \`?name=\${encodeURIComponent(cName)}\`;
             if(cLogo) proxyParams += \`&logo=\${encodeURIComponent(cLogo)}\`;
 
-            // Nossa URL de Proxy (que serve o manifesto editado)
-            // Adiciona timestamp para evitar cache
             const myMirrorUrl = window.location.origin + "/addon/manifest.json" + proxyParams + "&t=" + Date.now();
 
-            // 2. Montar Upstreams
             let config = { upstreams: [], stores: [] };
-            
-            // Adiciona Brazuca (via nosso Proxy)
             config.upstreams.push({ u: myMirrorUrl });
 
-            // 3. Montar Stores (Debrids)
             if (document.getElementById('use_rd').checked) {
                 config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
             }
@@ -282,7 +259,6 @@ const generatorHtml = `
             const b64 = btoa(JSON.stringify(config));
             const hostClean = host.replace(/^https?:\\/\\//, '');
             
-            // Links finais
             const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
             const stremioUrl = \`stremio://\${hostClean}/stremio/wrap/\${b64}/manifest.json\`;
 
@@ -316,7 +292,6 @@ app.get('*', (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 
-// Adaptação para Vercel Serverless (se necessário)
 if (process.env.VERCEL) {
     module.exports = app;
 } else {
@@ -324,3 +299,4 @@ if (process.env.VERCEL) {
         console.log(`Gerador rodando na porta ${PORT}`);
     });
 }
+
