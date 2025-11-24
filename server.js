@@ -125,8 +125,8 @@ const generatorHtml = `
             <div>
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">1. Servidor (Bridge)</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
-                    <option value="https://stremthru.elfhosted.com">ElfHosted</option>
-                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight</option>
+                    <option value="https://stremthru.elfhosted.com">ElfHosted (Recomendado)</option>
+                    <option value="https://stremthrufortheweebs.midnightignite.me">Midnight Ignite</option>
                 </select>
             </div>
 
