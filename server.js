@@ -1,167 +1,173 @@
-const express = require("express");
-const cors = require("cors");
-
+const express = require('express');
+const cors = require('cors');
+const axios = require('axios');
 const app = express();
+
 app.use(cors());
 
-// Util: montar manifesto com nome curto e logo oficial
-function buildManifest({ name = "Brazuca", logo = "https://i.imgur.com/KVpfrAk.png" } = {}) {
-  return {
-    id: "brscrap.brazuca.debrid",
-    version: "1.0.0",
-    name,
-    description: "Addon Brazuca Torrents com StremThru e Debrid",
-    logo,
-    catalogs: [],
-    resources: ["stream"],
-    types: ["movie", "series"],
-    idPrefixes: ["tt"]
-  };
-}
+// ============================================================
+// CONFIGURAÇÕES DO ESPELHO
+// ============================================================
+const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
+const NEW_NAME = "Brazuca"; 
+const NEW_ID = "community.brazuca.proxy.v6"; // ID Novo para forçar atualização
+const NEW_LOGO = "https://i.imgur.com/KVpfrAk.png"; // Logo oficial
 
-// Rota do manifesto estático
-app.get("/manifest.json", (req, res) => {
-  const manifest = buildManifest();
-  res.json(manifest);
+// ============================================================
+// ROTA 1: MANIFESTO EDITADO
+// ============================================================
+app.get('/addon/manifest.json', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    try {
+        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
+        const manifest = response.data;
+
+        manifest.id = NEW_ID;
+        manifest.name = NEW_NAME;
+        manifest.description = "Addon Brazuca via StremThru + Debrid";
+        manifest.logo = NEW_LOGO;
+        manifest.version = "3.1.0"; 
+        
+        res.json(manifest);
+    } catch (error) {
+        console.error("Erro upstream:", error.message);
+        res.status(500).json({ error: "Erro no manifesto original" });
+    }
 });
 
-// Exemplo de gerador de link do addon com configuração (opcional)
-app.get("/generate", (req, res) => {
-  // Parâmetros esperados (ex.: /generate?debrid=rd&token=XXX&stremthru=true)
-  const { debrid = "rd", token = "", stremthru = "true" } = req.query;
-
-  const config = {
-    service: debrid === "torbox" ? "torbox" : "rd",
-    token: String(token),
-    stremthru: String(stremthru) === "true"
-  };
-
-  const encoded = Buffer.from(JSON.stringify(config)).toString("base64");
-  // Link para instalar no Stremio usando este servidor como base
-  const base = `${req.protocol}://${req.get("host")}`;
-  const installLink = `${base}/manifest.json?config=${encoded}`;
-
-  res.json({ installLink, config });
+// ============================================================
+// ROTA 2: REDIRECIONADOR DE RECURSOS
+// ============================================================
+app.use('/addon', (req, res) => {
+    const redirectUrl = `${UPSTREAM_BASE}${req.path}`;
+    res.redirect(307, redirectUrl);
 });
 
-// Página inicial com layout melhor e botões destacados
-app.get("/", (req, res) => {
-  const base = `${req.protocol}://${req.get("host")}`;
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-    <head>
-      <meta charset="UTF-8">
-      <title>Brazuca Addon</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <style>
-        :root {
-          --bg: #0f1218;
-          --card: #161b22;
-          --text: #e6edf3;
-          --muted: #9da7b1;
-          --primary: #0078d7;
-          --primary-hover: #005fa3;
-          --accent: #ff9800;
+// ============================================================
+// ROTA 3: PÁGINA GERADORA
+// ============================================================
+const generatorHtml = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brazuca Addon Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #050505; color: #e2e8f0; font-family: sans-serif; }
+        .card { background-color: #111; border: 1px solid #333; }
+        .btn-subscribe {
+          display: inline-block;
+          width: 100%;
+          text-align: center;
+          padding: 10px;
+          border-radius: 8px;
+          font-weight: bold;
+          margin-top: 8px;
+          transition: transform 0.2s;
         }
-        * { box-sizing: border-box; }
-        body {
-          margin: 0; padding: 0;
-          font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-          color: var(--text);
-          background: linear-gradient(180deg, #0c1016 0%, #0f1218 100%);
-        }
-        .container {
-          max-width: 940px; margin: 0 auto; padding: 32px 16px;
-        }
-        .card {
-          background: var(--card);
-          border: 1px solid #21262d;
-          border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.35);
-          padding: 24px;
-        }
-        .header {
-          display: flex; align-items: center; gap: 16px; margin-bottom: 8px;
-        }
-        .header img {
-          width: 64px; height: 64px; border-radius: 12px; object-fit: cover;
-          border: 1px solid #30363d;
-        }
-        .title {
-          font-size: 28px; font-weight: 700; margin: 0;
-        }
-        .subtitle { color: var(--muted); margin: 6px 0 18px; }
-        .cta-row {
-          display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0 8px;
-        }
-        .btn {
-          display: inline-flex; align-items: center; justify-content: center;
-          gap: 8px; padding: 12px 18px;
-          border-radius: 10px; border: 1px solid transparent;
-          color: #fff; text-decoration: none; font-weight: 600;
-          transition: all 0.2s ease;
-        }
-        .btn-primary { background: var(--primary); }
-        .btn-primary:hover { background: var(--primary-hover); transform: translateY(-1px); }
-        .btn-accent { background: var(--accent); }
-        .btn-accent:hover { filter: brightness(0.92); transform: translateY(-1px); }
-        .section { margin-top: 22px; }
-        .section h2 { font-size: 18px; margin: 0 0 10px; color: var(--text); }
-        .muted { color: var(--muted); font-size: 14px; }
-        .code {
-          background: #0b0e13; border: 1px solid #22272e;
-          border-radius: 10px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-          color: var(--text);
-        }
-        .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
-        @media (max-width: 600px) {
-          .header { flex-direction: column; text-align: center; }
-          .header img { width: 80px; height: 80px; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="card">
-          <div class="header">
-            <img src="https://i.imgur.com/KVpfrAk.png" alt="Logo Brazuca">
-            <div>
-              <h1 class="title">Brazuca</h1>
-              <p class="subtitle">Addon Brazuca Torrents com StremThru e Debrid</p>
-            </div>
-          </div>
+        .btn-subscribe:hover { transform: scale(1.02); }
+        .btn-rd { background: linear-gradient(to right, #2563eb, #3b82f6); color: white; }
+        .btn-tb { background: linear-gradient(to right, #9333ea, #a855f7); color: white; }
+        .btn-action { background: linear-gradient(to right, #2563eb, #3b82f6); color: white; }
+        .btn-action:hover { filter: brightness(1.1); }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
 
-          <div class="cta-row">
-            <a href="${base}/manifest.json" class="btn btn-primary">Instalar no Stremio</a>
-            <a href="https://real-debrid.com/premium" target="_blank" rel="noopener" class="btn btn-accent">Assinar Real‑Debrid</a>
-            <a href="https://torbox.app/premium" target="_blank" rel="noopener" class="btn btn-accent">Assinar Torbox</a>
-          </div>
-
-          <div class="section">
-            <h2>Gerador de link com configuração</h2>
-            <p class="muted">Se quiser gerar um link de instalação com serviço e token embutidos, use o endpoint abaixo:</p>
-            <div class="code">
-              GET ${base}/generate?debrid=rd&amp;token=SEU_TOKEN&amp;stremthru=true
-            </div>
-          </div>
-
-          <div class="section">
-            <h2>Como instalar</h2>
-            <p class="muted">No Stremio, cole o link do manifesto:</p>
-            <div class="code">${base}/manifest.json</div>
-          </div>
-
-          <div class="footer">
-            Versão 4.0.0 • Brazuca StremThru Generator
-          </div>
+    <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-6 border border-gray-800 relative">
+        
+        <div class="text-center mb-6">
+            <img src="${NEW_LOGO}" class="w-16 h-16 mx-auto mb-2 rounded-full border border-gray-700">
+            <h1 class="text-2xl font-bold text-white">Brazuca</h1>
+            <p class="text-gray-500 text-xs">Gerador StremThru Customizado v3.1</p>
         </div>
-      </div>
-    </body>
-    </html>
-  `);
-});
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Servidor rodando na porta ${port}`);
-});
+        <form class="space-y-5">
+            <!-- Serviços -->
+            <div class="space-y-4">
+                <label class="text-xs font-bold text-gray-500 uppercase ml-1">Serviços (Tokens StremThru)</label>
+                
+                <!-- Real Debrid -->
+                <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800">
+                    <div class="flex items-center gap-2 mb-1">
+                        <input type="checkbox" id="use_rd" class="accent-blue-600 w-4 h-4" onchange="validate()">
+                        <span class="text-sm font-bold text-gray-300">Real-Debrid</span>
+                    </div>
+                    <input type="text" id="rd_key" placeholder="Cole o Token da Store 'rd'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-blue-500 focus:bg-black transition-colors" disabled>
+                    <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-subscribe btn-rd">💎 Assinar Real-Debrid</a>
+                </div>
+
+                <!-- TorBox -->
+                <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800">
+                    <div class="flex items-center gap-2 mb-1">
+                        <input type="checkbox" id="use_tb" class="accent-purple-600 w-4 h-4" onchange="validate()">
+                        <span class="text-sm font-bold text-gray-300">TorBox</span>
+                    </div>
+                    <input type="text" id="tb_key" placeholder="Cole o Token da Store 'tb'" class="w-full input-dark p-2 rounded text-xs bg-transparent border border-gray-700 focus:border-purple-500 focus:bg-black transition-colors" disabled>
+                    <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-subscribe btn-tb">⚡ Assinar TorBox</a>
+                </div>
+            </div>
+
+            <!-- Resultado -->
+            <div id="resultArea" class="hidden pt-4 border-t border-gray-800 space-y-3">
+                <div class="relative">
+                    <input type="text" id="finalUrl" readonly class="w-full bg-gray-900 border border-blue-900 text-blue-400 text-[10px] p-3 rounded pr-12 font-mono">
+                    <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">
+                        COPY
+                    </button>
+                </div>
+                <a id="installBtn" href="#" class="block w-full btn-action py-3 rounded-lg text-center font-bold text-sm uppercase tracking-wide shadow-lg shadow-blue-900/20">
+                    INSTALAR NO STREMIO
+                </a>
+            </div>
+
+            <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-800 text-gray-500 py-3 rounded-lg text-sm font-bold cursor-not-allowed transition" disabled>
+                GERAR LINK
+            </button>
+        </form>
+    </div>
+
+    <script>
+        function validate() {
+            const rd = document.getElementById('use_rd').checked;
+            const tb = document.getElementById('use_tb').checked;
+            const rdInput = document.getElementById('rd_key');
+            const tbInput = document.getElementById('tb_key');
+            const btn = document.getElementById('btnGenerate');
+
+            rdInput.disabled = !rd;
+            tbInput.disabled = !tb;
+            
+            if(!rd) rdInput.value = '';
+            if(!tb) tbInput.value = '';
+            
+            const isValid = (rd && rdInput.value.trim()) || (tb && tbInput.value.trim());
+
+            btn.disabled = !isValid;
+            if(isValid) {
+                btn.classList.replace('bg-gray-800', 'btn-action');
+                btn.classList.replace('text-gray-500', 'text-white');
+                btn.classList.remove('cursor-not-allowed');
+            } else {
+                btn.classList.replace('btn-action', 'bg-gray-800');
+                btn.classList.replace('text-white', 'text-gray-500');
+                btn.classList.add('cursor-not-allowed');
+            }
+        }
+
+        document.getElementById('rd_key').addEventListener('input', validate);
+        document.getElementById('tb_key').addEventListener('input', validate);
+
+        function generate() {
+            const myMirrorUrl = window.location.origin + "/addon/manifest.json?t=" + Date.now();
+            let config = { upstreams: [], stores: [] };
+
+            if (document.getElementById('use_rd').checked) {
+                config.upstreams
