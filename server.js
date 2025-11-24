@@ -10,10 +10,10 @@ app.use(cors());
 // 1. MANIFESTO
 // ============================================================
 const manifest = {
-    id: 'community.brazuca.pro.direct.v6',
-    version: '6.0.0',
+    id: 'community.brazuca.pro.direct.v7',
+    version: '7.0.0',
     name: 'Brazuca',
-    description: 'Brazuca Direct (Real-Debrid & TorBox)',
+    description: 'Filmes e Séries Brasileiros (Real-Debrid & TorBox)',
     resources: ['stream'],
     types: ['movie', 'series'],
     catalogs: [],
@@ -28,10 +28,12 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
 
+// Trackers (Essencial para TorBox encontrar peers rápido)
 const TRACKERS = [
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.stealth.si:80/announce",
-    "udp://tracker.openbittorrent.com:80/announce"
+    "udp://tracker.openbittorrent.com:80/announce",
+    "udp://tracker.coppersurfer.tk:6969/announce"
 ];
 
 // ============================================================
@@ -42,29 +44,34 @@ const TRACKERS = [
 async function resolveRealDebrid(infoHash, apiKey) {
     try {
         const magnet = `magnet:?xt=urn:btih:${infoHash}`;
+        
+        // 1. Adicionar
         const addUrl = 'https://api.real-debrid.com/rest/1.0/torrents/addMagnet';
         const addResp = await axios.post(addUrl, `magnet=${encodeURIComponent(magnet)}`, {
             headers: { 'Authorization': `Bearer ${apiKey}` }
         });
         const torrentId = addResp.data.id;
 
+        // 2. Selecionar (Polling inteligente)
         const infoUrl = `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`;
         let attempts = 0;
-        
-        // Polling (Max 5s)
-        while (attempts < 10) {
+        while (attempts < 5) {
             const infoResp = await axios.get(infoUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
-            if (infoResp.data.status === 'waiting_files_selection') {
+            const status = infoResp.data.status;
+            
+            if (status === 'waiting_files_selection') {
                 await axios.post(`https://api.real-debrid.com/rest/1.0/torrents/selectFiles/${torrentId}`, `files=all`, {
                     headers: { 'Authorization': `Bearer ${apiKey}` }
                 });
                 break;
             }
-            if (infoResp.data.status === 'downloaded') break;
-            await new Promise(r => setTimeout(r, 500));
+            if (status === 'downloaded' || status === 'downloading') break;
+            
+            await new Promise(r => setTimeout(r, 800));
             attempts++;
         }
 
+        // 3. Pegar Link
         const finalInfo = await axios.get(infoUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
         if (finalInfo.data.links && finalInfo.data.links.length > 0) {
             const unrestrictResp = await axios.post('https://api.real-debrid.com/rest/1.0/unrestrict/link', `link=${finalInfo.data.links[0]}`, {
@@ -79,18 +86,21 @@ async function resolveRealDebrid(infoHash, apiKey) {
 async function checkRealDebridCache(hashes, apiKey) {
     if (!hashes.length) return {};
     const validHashes = hashes.slice(0, 50);
+    
     try {
         const url = `https://api.real-debrid.com/rest/1.0/torrents/instantAvailability/${validHashes.join('/')}`;
         const resp = await axios.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
         const results = {};
         
-        // Normalização agressiva
-        const mapLower = {};
-        Object.keys(resp.data).forEach(k => mapLower[k.toLowerCase()] = resp.data[k]);
+        // Normalização segura
+        const lowerResponse = {};
+        for (const k in resp.data) {
+            lowerResponse[k.toLowerCase()] = resp.data[k];
+        }
 
         for (const h of validHashes) {
-            const data = mapLower[h.toLowerCase()];
-            // Se existe 'rd' e tem arquivos, é cache
+            const data = lowerResponse[h.toLowerCase()];
+            // Verifica se existe 'rd' e se tem arquivos dentro
             if (data && data.rd && Array.isArray(data.rd) && data.rd.length > 0) {
                 results[h] = true;
             } else {
@@ -101,30 +111,40 @@ async function checkRealDebridCache(hashes, apiKey) {
     } catch (e) { return {}; }
 }
 
-// --- TORBOX ---
+// --- TORBOX (REFEITO PARA CORRIGIR UPLOAD) ---
 async function resolveTorBox(infoHash, apiKey) {
     try {
-        const magnet = `magnet:?xt=urn:btih:${infoHash}`;
-        
-        // 1. Create
+        // TorBox precisa de trackers para iniciar rápido se não tiver em cache
+        let magnet = `magnet:?xt=urn:btih:${infoHash}`;
+        TRACKERS.forEach(t => magnet += `&tr=${encodeURIComponent(t)}`);
+
+        console.log(`[TorBox] Adicionando: ${infoHash}`);
+
+        // 1. Create (Usando x-www-form-urlencoded estrito)
         const params = new URLSearchParams();
         params.append('magnet', magnet);
         params.append('seed', '1');
         params.append('allow_zip', 'false');
 
         const createResp = await axios.post('https://api.torbox.app/v1/api/torrents/create', params, {
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }
+            headers: { 
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
         });
-        
-        const torrentId = createResp.data.data.torrent_id;
-        if (!torrentId) return null;
 
-        // 2. Wait & List (Polling Aumentado para 10s)
-        // O TorBox demora para processar metadados de torrents novos
-        let foundFiles = null;
-        
-        for(let i=0; i<5; i++) {
-            await new Promise(r => setTimeout(r, 2000)); // 2s interval
+        if (!createResp.data.success) {
+            console.error("[TorBox] Create Failed:", createResp.data);
+            return null;
+        }
+
+        const torrentId = createResp.data.data.torrent_id;
+
+        // 2. Polling para Listagem (Aumentado para 8s)
+        // TorBox demora para indexar metadados
+        let files = null;
+        for(let i=0; i<4; i++) {
+            await new Promise(r => setTimeout(r, 2000)); // 2s, 4s, 6s, 8s
             
             try {
                 const listResp = await axios.get(`https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true&id=${torrentId}`, {
@@ -133,28 +153,34 @@ async function resolveTorBox(infoHash, apiKey) {
                 
                 const data = listResp.data.data;
                 if (data && data.files && data.files.length > 0) {
-                    foundFiles = data.files;
-                    break; 
+                    files = data.files;
+                    break;
                 }
-            } catch(e) { /* Ignora erros temporários de listagem */ }
+            } catch(e) {}
         }
         
-        if (foundFiles) {
+        if (files) {
             // Pega o maior arquivo
-            const file = foundFiles.reduce((prev, curr) => (prev.size > curr.size) ? prev : curr);
+            const file = files.reduce((prev, curr) => (prev.size > curr.size) ? prev : curr);
             const reqUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${apiKey}&torrent_id=${torrentId}&file_id=${file.id}&zip_link=false`;
             const reqResp = await axios.get(reqUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
             
             if (reqResp.data.success) return reqResp.data.data;
         }
         
+        return null; // Download started but not ready
+    } catch (e) { 
+        console.error("TorBox Resolve Error:", e.message);
         return null; 
-    } catch (e) { return null; }
+    }
 }
 
 async function checkTorBoxCache(hashes, apiKey) {
     if (!hashes.length) return {};
-    const hStr = hashes.slice(0, 40).join(',');
+    // Limite seguro e string limpa
+    const validHashes = hashes.slice(0, 40);
+    const hStr = validHashes.join(',');
+
     try {
         const url = `https://api.torbox.app/v1/api/torrents/checkcached?hash=${hStr}&format=list&list_files=false`;
         const resp = await axios.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
@@ -163,10 +189,14 @@ async function checkTorBoxCache(hashes, apiKey) {
         hashes.forEach(h => results[h] = false);
         
         const data = resp.data.data;
-        // TorBox retorna array de hashes encontrados
+        // TorBox retorna lista de hashes encontrados (strings)
+        // Ex: ['hash1', 'hash2']
         if (Array.isArray(data)) {
-            data.forEach(h => { if(h) results[h.toLowerCase()] = true; });
+            data.forEach(foundHash => {
+                if(foundHash) results[foundHash.toLowerCase()] = true;
+            });
         } else if (typeof data === 'object') {
+            // Fallback para formato antigo { hash: true }
             Object.keys(data).forEach(k => { if(data[k]) results[k.toLowerCase()] = true; });
         }
         return results;
@@ -188,9 +218,11 @@ const configureHtml = `
     <style>
         body { background-color: #0b0c10; color: #c5c6c7; font-family: 'Segoe UI', sans-serif; }
         .card { background-color: #1f2833; border: 1px solid #45a29e; box-shadow: 0 0 20px rgba(102, 252, 241, 0.15); }
-        .input-dark { background-color: #0b0c10; border: 1px solid #45a29e; color: #fff; }
+        .input-dark { background-color: #0b0c10; border: 1px solid #45a29e; color: #fff; transition: all 0.3s; }
         .input-dark:focus { box-shadow: 0 0 8px #66fcf1; outline: none; }
         .btn-action { background: linear-gradient(90deg, #45a29e 0%, #66fcf1 100%); color: #0b0c10; font-weight: bold; }
+        .btn-action:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102, 252, 241, 0.4); }
+        
         .btn-ref-rd { background-color: #2563eb; color: white; font-size: 0.8rem; padding: 10px; border-radius: 8px; display: block; text-align: center; font-weight: bold; }
         .btn-ref-tb { background-color: #9333ea; color: white; font-size: 0.8rem; padding: 10px; border-radius: 8px; display: block; text-align: center; font-weight: bold; }
     </style>
@@ -198,29 +230,36 @@ const configureHtml = `
 <body class="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-black to-gray-900">
     <div class="w-full max-w-md card rounded-2xl p-8 relative">
         <div class="text-center mb-8">
-            <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2">Brazuca <span class="text-white">Direct</span></h1>
-            <p class="text-gray-400 text-xs">Configuração V6.0</p>
+            <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2 tracking-tight">Brazuca <span class="text-white">Direct</span></h1>
+            <p class="text-gray-400 text-xs tracking-widest">V7.0 FINAL FIX</p>
         </div>
         <form id="configForm" class="space-y-6">
-            <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800">
+            <!-- Real Debrid -->
+            <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-blue-500 transition-colors relative">
                 <label class="flex items-center gap-3 cursor-pointer mb-3">
                     <input type="checkbox" id="use_rd" class="w-5 h-5 accent-[#66fcf1]" onchange="validate()">
                     <span class="text-lg font-bold text-white">Real-Debrid</span>
                 </label>
-                <input type="text" id="rd_key" placeholder="API Key (F...)" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 mb-3" disabled>
-                <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-ref-rd">💎 Assinar Real-Debrid</a>
+                <input type="text" id="rd_key" placeholder="API Key (F...)" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600 mb-3" disabled>
+                <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-ref-rd shadow-lg shadow-blue-900/30">💎 Assinar Real-Debrid</a>
             </div>
-            <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800">
+            <!-- TorBox -->
+            <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-purple-500 transition-colors relative">
                 <label class="flex items-center gap-3 cursor-pointer mb-3">
                     <input type="checkbox" id="use_tb" class="w-5 h-5 accent-[#66fcf1]" onchange="validate()">
                     <span class="text-lg font-bold text-white">TorBox</span>
                 </label>
-                <input type="text" id="tb_key" placeholder="API Key TorBox" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 mb-3" disabled>
-                <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-ref-tb">⚡ Assinar TorBox</a>
+                <input type="text" id="tb_key" placeholder="API Key TorBox" class="w-full input-dark p-3 rounded-lg text-sm text-gray-300 placeholder-gray-600 mb-3" disabled>
+                <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-ref-tb shadow-lg shadow-purple-900/30">⚡ Assinar TorBox</a>
             </div>
+            <!-- Ações -->
             <div class="grid grid-cols-4 gap-2 pt-2">
-                <button type="button" onclick="copyLink()" id="btnCopy" class="col-span-1 bg-gray-800 text-white font-bold rounded-xl opacity-50 pointer-events-none flex items-center justify-center"><i class="fas fa-copy"></i></button>
-                <a id="installBtn" href="#" class="col-span-3 block btn-action py-4 rounded-xl text-lg text-center font-bold uppercase tracking-widest opacity-50 pointer-events-none">INSTALAR</a>
+                <button type="button" onclick="copyLink()" id="btnCopy" class="col-span-1 bg-gray-800 hover:bg-gray-700 text-white font-bold rounded-xl transition opacity-50 pointer-events-none flex items-center justify-center" title="Copiar Link">
+                    <i class="fas fa-copy"></i>
+                </button>
+                <a id="installBtn" href="#" class="col-span-3 block btn-action py-4 rounded-xl text-lg uppercase tracking-widest text-center transition-all opacity-50 pointer-events-none shadow-lg flex items-center justify-center gap-2">
+                    <i class="fas fa-play"></i> INSTALAR
+                </a>
             </div>
             <input type="text" id="finalLink" class="hidden">
         </form>
@@ -297,7 +336,10 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     let cfg;
     try { cfg = JSON.parse(Buffer.from(decodeURIComponent(req.params.config), 'base64').toString()); } catch(e) { return res.json({ streams: [] }); }
 
-    if (!cfg.rd && !cfg.tb) return res.json({ streams: [] });
+    const rdKey = cfg.rd;
+    const tbKey = cfg.tb;
+
+    if (!rdKey && !tbKey) return res.json({ streams: [{ title: '⚠ Configure o Addon' }] });
 
     let streams = [];
     try {
@@ -318,36 +360,35 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         if (h) { s.infoHash = h.toLowerCase(); if(!hashList.includes(s.infoHash)) hashList.push(s.infoHash); }
     });
 
-    // Check Cache
     let rdCache = {}, tbCache = {};
     if (hashList.length > 0) {
-        if (cfg.rd) rdCache = await checkRealDebridCache(hashList, cfg.rd);
-        if (cfg.tb) tbCache = await checkTorBoxCache(hashList, cfg.tb);
+        if (rdKey) rdCache = await checkRealDebridCache(hashList, rdKey);
+        if (tbKey) tbCache = await checkTorBoxCache(hashList, tbKey);
     }
 
     const finalStreams = [];
     streams.forEach(s => {
         const h = s.infoHash;
         if (!h) return;
-        const cleanTitle = (s.title || 'video').replace(/\n/g, ' ').trim();
+        const cleanTitle = (s.title || 'video').replace(/\n/g, ' ').replace(/\[.*?\]/g, '').trim();
 
-        if (cfg.rd) {
+        if (rdKey) {
             const isCached = rdCache[h] === true;
             const icon = isCached ? '⚡' : '📥';
             finalStreams.push({
                 name: 'Brazuca [RD]',
                 title: `${icon} ${cleanTitle}`,
-                url: `${req.protocol}://${req.get('host')}/resolve/realdebrid/${encodeURIComponent(cfg.rd)}/${h}`,
+                url: `${req.protocol}://${req.get('host')}/resolve/realdebrid/${encodeURIComponent(rdKey)}/${h}`,
                 behaviorHints: { notWebReady: !isCached }
             });
         }
-        if (cfg.tb) {
+        if (tbKey) {
             const isCached = tbCache[h] === true;
             const icon = isCached ? '⚡' : '📥';
             finalStreams.push({
                 name: 'Brazuca [TB]',
                 title: `${icon} ${cleanTitle}`,
-                url: `${req.protocol}://${req.get('host')}/resolve/torbox/${encodeURIComponent(cfg.tb)}/${h}`,
+                url: `${req.protocol}://${req.get('host')}/resolve/torbox/${encodeURIComponent(tbKey)}/${h}`,
                 behaviorHints: { notWebReady: !isCached }
             });
         }
@@ -357,6 +398,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
     res.json({ streams: finalStreams });
 });
 
+// RESOLVE HANDLER (Página de status para download)
 app.get('/resolve/:service/:key/:hash', async (req, res) => {
     const { service, key, hash } = req.params;
     let directLink = null;
@@ -367,14 +409,25 @@ app.get('/resolve/:service/:key/:hash', async (req, res) => {
     if (directLink) {
         res.redirect(directLink);
     } else {
-        // Mensagem de status 200 com HTML simples
+        // Resposta HTML amigável para o usuário entender que o download começou
         res.send(`
             <html>
-                <body style="background:#111; color:#fff; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
-                    <div style="text-align:center;">
-                        <h1 style="color:#45a29e; margin-bottom:10px;">📥 Download Iniciado</h1>
-                        <p>O arquivo não estava em cache e foi adicionado à sua nuvem <b>${service}</b>.</p>
-                        <p>Aguarde o download terminar no site e tente novamente.</p>
+                <head>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body { background-color: #111; color: #eee; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; text-align: center; padding: 20px; }
+                        h1 { color: #45a29e; }
+                        p { font-size: 1.1rem; margin: 10px 0; }
+                        .btn { background: #45a29e; color: #000; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-top: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div>
+                        <h1>📥 Download Iniciado</h1>
+                        <p>O arquivo não estava em cache.</p>
+                        <p>Ele foi adicionado à sua nuvem <b>${service.toUpperCase()}</b>.</p>
+                        <p>Aguarde a conclusão no site ou tente novamente em alguns instantes.</p>
+                        <a href="javascript:history.back()" class="btn">Voltar</a>
                     </div>
                 </body>
             </html>
@@ -384,5 +437,5 @@ app.get('/resolve/:service/:key/:hash', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-    console.log(`Addon rodando na porta ${PORT}`);
+    console.log(`Brazuca v7.0 rodando na porta ${PORT}`);
 });
