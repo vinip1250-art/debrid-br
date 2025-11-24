@@ -10,10 +10,10 @@ app.use(cors());
 // 1. MANIFESTO
 // ============================================================
 const manifest = {
-    id: 'community.brazuca.pro.direct.v8',
-    version: '8.0.0',
+    id: 'community.brazuca.pro.direct.v9',
+    version: '9.0.0',
     name: 'Brazuca',
-    description: 'Filmes e Séries Brasileiros (Real-Debrid & TorBox)',
+    description: 'Brazuca Direct (TorBox Fix v9)',
     resources: ['stream'],
     types: ['movie', 'series'],
     catalogs: [],
@@ -28,12 +28,19 @@ const manifest = {
 const builder = new addonBuilder(manifest);
 const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
 
-// Trackers (Ajuda o Debrid a baixar mais rápido)
 const TRACKERS = [
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.stealth.si:80/announce",
-    "udp://tracker.openbittorrent.com:80/announce"
+    "udp://tracker.openbittorrent.com:80/announce",
+    "udp://tracker.coppersurfer.tk:6969/announce"
 ];
+
+// Header padrão para evitar bloqueios
+const AXIOS_CONFIG = {
+    headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+};
 
 // ============================================================
 // 2. FUNÇÕES DE DEBRID
@@ -47,18 +54,18 @@ async function resolveRealDebrid(infoHash, apiKey) {
         // 1. Adicionar
         const addUrl = 'https://api.real-debrid.com/rest/1.0/torrents/addMagnet';
         const addResp = await axios.post(addUrl, `magnet=${encodeURIComponent(magnet)}`, {
-            headers: { 'Authorization': `Bearer ${apiKey}` }
+            headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` }
         });
         const torrentId = addResp.data.id;
 
-        // 2. Esperar Seleção (Polling)
+        // 2. Polling
         const infoUrl = `https://api.real-debrid.com/rest/1.0/torrents/info/${torrentId}`;
         let attempts = 0;
-        while (attempts < 10) { // Tenta por 5-8 segundos
-            const infoResp = await axios.get(infoUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+        while (attempts < 5) {
+            const infoResp = await axios.get(infoUrl, { headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` } });
             if (infoResp.data.status === 'waiting_files_selection') {
                 await axios.post(`https://api.real-debrid.com/rest/1.0/torrents/selectFiles/${torrentId}`, `files=all`, {
-                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                    headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` }
                 });
                 break;
             }
@@ -67,11 +74,11 @@ async function resolveRealDebrid(infoHash, apiKey) {
             attempts++;
         }
 
-        // 3. Pegar Link
-        const finalInfo = await axios.get(infoUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+        // 3. Link
+        const finalInfo = await axios.get(infoUrl, { headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` } });
         if (finalInfo.data.links && finalInfo.data.links.length > 0) {
             const unrestrictResp = await axios.post('https://api.real-debrid.com/rest/1.0/unrestrict/link', `link=${finalInfo.data.links[0]}`, {
-                headers: { 'Authorization': `Bearer ${apiKey}` }
+                headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` }
             });
             return unrestrictResp.data.download;
         }
@@ -84,62 +91,73 @@ async function checkRealDebridCache(hashes, apiKey) {
     const validHashes = hashes.slice(0, 50);
     try {
         const url = `https://api.real-debrid.com/rest/1.0/torrents/instantAvailability/${validHashes.join('/')}`;
-        const resp = await axios.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+        const resp = await axios.get(url, { headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` } });
         const results = {};
         
-        // Normaliza resposta para evitar erros de Maiuscula/Minuscula
         const mapLower = {};
         for (const k in resp.data) mapLower[k.toLowerCase()] = resp.data[k];
 
         for (const h of validHashes) {
             const data = mapLower[h.toLowerCase()];
-            // Lógica estrita: precisa ter arquivos dentro de 'rd'
-            if (data && data.rd && Array.isArray(data.rd) && data.rd.length > 0) {
-                results[h] = true;
-            } else {
-                results[h] = false;
-            }
+            if (data && data.rd && Array.isArray(data.rd) && data.rd.length > 0) results[h] = true;
+            else results[h] = false;
         }
         return results;
     } catch (e) { return {}; }
 }
 
-// --- TORBOX (URL CORRIGIDA) ---
+// --- TORBOX (FIX 404) ---
 async function resolveTorBox(infoHash, apiKey) {
     try {
+        // Magnet Limpo
         const magnet = `magnet:?xt=urn:btih:${infoHash}`;
         
-        // 1. Criar (URL Fix: removido /api extra)
-        const createUrl = 'https://api.torbox.app/v1/api/torrents/create';
+        // 1. Create - URL Corrigida (sem /api duplicado)
+        // Rota: https://api.torbox.app/v1/torrents/create
+        const createUrl = 'https://api.torbox.app/v1/api/torrents/create'; // Tenta a oficial v1 primeiro
+        
         const params = new URLSearchParams();
         params.append('magnet', magnet);
         params.append('seed', '1');
         params.append('allow_zip', 'false');
 
-        const createResp = await axios.post(createUrl, params, {
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }
-        });
-        
-        if (!createResp.data.success) {
-            // Tenta endpoint alternativo se o primeiro falhar (algumas contas usam rota diferente)
-            console.log("Tentando rota alternativa Torbox...");
-            const altUrl = 'https://api.torbox.app/v1/torrents/create';
-            const altResp = await axios.post(altUrl, params, {
-                 headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }
+        let createResp;
+        try {
+            createResp = await axios.post(createUrl, params, {
+                headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }
             });
-            if(!altResp.data.success) return null;
-            createResp.data = altResp.data;
+        } catch (err) {
+            // Fallback para rota sem /api se a primeira der 404
+            console.log("Tentando rota alternativa TorBox...");
+            createResp = await axios.post('https://api.torbox.app/v1/torrents/create', params, {
+                headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/x-www-form-urlencoded' }
+            });
+        }
+
+        if (!createResp || !createResp.data.success) {
+            console.error("TorBox Create Falhou");
+            return null;
         }
 
         const torrentId = createResp.data.data.torrent_id;
 
-        // 2. Listar (Polling aumentado para 10s)
+        // 2. Listar (Polling)
         let foundFile = null;
         for(let i=0; i<5; i++) {
             await new Promise(r => setTimeout(r, 2000)); 
             try {
-                const listUrl = `https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true&id=${torrentId}`;
-                const listResp = await axios.get(listUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+                // Tenta listar
+                // Rota: https://api.torbox.app/v1/api/torrents/mylist (ou sem /api)
+                let listUrl = `https://api.torbox.app/v1/api/torrents/mylist?bypass_cache=true&id=${torrentId}`;
+                let listResp;
+                
+                try {
+                    listResp = await axios.get(listUrl, { headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` } });
+                } catch(e) {
+                    listUrl = `https://api.torbox.app/v1/torrents/mylist?bypass_cache=true&id=${torrentId}`;
+                    listResp = await axios.get(listUrl, { headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` } });
+                }
+
                 const data = listResp.data.data;
                 if (data && data.files && data.files.length > 0) {
                     foundFile = data.files.reduce((prev, curr) => (prev.size > curr.size) ? prev : curr);
@@ -149,14 +167,23 @@ async function resolveTorBox(infoHash, apiKey) {
         }
         
         if (foundFile) {
-            const reqUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${apiKey}&torrent_id=${torrentId}&file_id=${foundFile.id}&zip_link=false`;
-            const reqResp = await axios.get(reqUrl, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+            // Request DL
+            let reqUrl = `https://api.torbox.app/v1/api/torrents/requestdl?token=${apiKey}&torrent_id=${torrentId}&file_id=${foundFile.id}&zip_link=false`;
+            let reqResp;
+            
+            try {
+                reqResp = await axios.get(reqUrl, { headers: { ...AXIOS_CONFIG.headers } });
+            } catch(e) {
+                reqUrl = `https://api.torbox.app/v1/torrents/requestdl?token=${apiKey}&torrent_id=${torrentId}&file_id=${foundFile.id}&zip_link=false`;
+                reqResp = await axios.get(reqUrl, { headers: { ...AXIOS_CONFIG.headers } });
+            }
+            
             if (reqResp.data.success) return reqResp.data.data;
         }
         
         return null; 
     } catch (e) { 
-        console.error("TorBox Error:", e.message);
+        console.error("TorBox Geral Error:", e.message);
         return null; 
     }
 }
@@ -165,9 +192,17 @@ async function checkTorBoxCache(hashes, apiKey) {
     if (!hashes.length) return {};
     const hStr = hashes.slice(0, 40).join(',');
     try {
-        // Endpoint V1 correto
-        const url = `https://api.torbox.app/v1/api/torrents/checkcached?hash=${hStr}&format=list&list_files=false`;
-        const resp = await axios.get(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+        // Tenta URL padrão com e sem /api
+        let url = `https://api.torbox.app/v1/api/torrents/checkcached?hash=${hStr}&format=list&list_files=false`;
+        let resp;
+        
+        try {
+            resp = await axios.get(url, { headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` } });
+        } catch(e) {
+            url = `https://api.torbox.app/v1/torrents/checkcached?hash=${hStr}&format=list&list_files=false`;
+            resp = await axios.get(url, { headers: { ...AXIOS_CONFIG.headers, 'Authorization': `Bearer ${apiKey}` } });
+        }
+
         const results = {};
         hashes.forEach(h => results[h] = false);
         
@@ -207,7 +242,7 @@ const configureHtml = `
     <div class="w-full max-w-md card rounded-2xl p-8 relative">
         <div class="text-center mb-8">
             <h1 class="text-4xl font-extrabold text-[#66fcf1] mb-2">Brazuca <span class="text-white">Direct</span></h1>
-            <p class="text-gray-400 text-xs">V8.0 FINAL</p>
+            <p class="text-gray-400 text-xs">V9.0 FINAL</p>
         </div>
         <form id="configForm" class="space-y-6">
             <div class="bg-[#0b0c10] p-4 rounded-xl border border-gray-800 hover:border-blue-500 transition-colors">
@@ -318,7 +353,6 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
 
     if (!streams.length) return res.json({ streams: [] });
 
-    // Hashes
     const hashList = [];
     streams.forEach(s => {
         let h = s.infoHash;
@@ -329,7 +363,6 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
         if (h) { s.infoHash = h.toLowerCase(); if(!hashList.includes(s.infoHash)) hashList.push(s.infoHash); }
     });
 
-    // Cache Check
     let rdCache = {}, tbCache = {};
     if (hashList.length > 0) {
         if (rdKey) rdCache = await checkRealDebridCache(hashList, rdKey);
@@ -348,7 +381,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             finalStreams.push({
                 name: 'Brazuca [RD]',
                 title: `${icon} ${cleanTitle}`,
-                url: `${req.protocol}://${req.get('host')}/resolve/realdebrid/${encodeURIComponent(rdKey)}/${h}`,
+                url: `${req.protocol}://${req.get('host')}/resolve/realdebrid/${encodeURIComponent(cfg.rd)}/${h}`,
                 behaviorHints: { notWebReady: !isCached }
             });
         }
@@ -358,7 +391,7 @@ app.get('/:config/stream/:type/:id.json', async (req, res) => {
             finalStreams.push({
                 name: 'Brazuca [TB]',
                 title: `${icon} ${cleanTitle}`,
-                url: `${req.protocol}://${req.get('host')}/resolve/torbox/${encodeURIComponent(tbKey)}/${h}`,
+                url: `${req.protocol}://${req.get('host')}/resolve/torbox/${encodeURIComponent(cfg.tb)}/${h}`,
                 behaviorHints: { notWebReady: !isCached }
             });
         }
@@ -378,13 +411,16 @@ app.get('/resolve/:service/:key/:hash', async (req, res) => {
     if (directLink) {
         res.redirect(directLink);
     } else {
-        // Fallback seguro: Retorna 404 com mensagem amigável para não travar o player
-        res.status(404).send(`
+        // Página de Status em vez de erro ou vídeo
+        res.send(`
             <html>
-                <body style="background:#111; color:#fff; font-family:sans-serif; text-align:center; padding:50px;">
-                    <h1 style="color:#45a29e;">📥 Download Iniciado</h1>
-                    <p>O arquivo foi adicionado à sua nuvem <b>${service.toUpperCase()}</b>.</p>
-                    <p>Aguarde o download terminar no site e tente novamente.</p>
+                <body style="background:#111; color:#fff; display:flex; justify-content:center; align-items:center; height:100vh; font-family:sans-serif;">
+                    <div style="text-align:center; max-width:400px;">
+                        <h1 style="color:#45a29e; font-size:2rem; margin-bottom:20px;">📥 Download Iniciado</h1>
+                        <p style="margin-bottom:20px;">O arquivo foi adicionado à sua nuvem <b>${service.toUpperCase()}</b>.</p>
+                        <p style="font-size:0.9rem; color:#888;">Aguarde o download terminar no site do Debrid e tente novamente.</p>
+                        <button onclick="history.back()" style="background:#333; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer; margin-top:20px;">Voltar</button>
+                    </div>
                 </body>
             </html>
         `);
@@ -393,5 +429,5 @@ app.get('/resolve/:service/:key/:hash', async (req, res) => {
 
 const PORT = process.env.PORT || 7000;
 app.listen(PORT, () => {
-    console.log(`Brazuca Direct v8 rodando na porta ${PORT}`);
+    console.log(`Addon rodando na porta ${PORT}`);
 });
