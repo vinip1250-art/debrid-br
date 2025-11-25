@@ -11,7 +11,7 @@ app.use(cors());
 const BRAZUCA_UPSTREAM = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
 const DEFAULT_NAME = "Brazuca"; 
 const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
-const PROJECT_VERSION = "1.0.0"; // Versão final
+const PROJECT_VERSION = "1.0.0"; 
 
 // ============================================================
 // 2. ROTA DO MANIFESTO (Proxy para Renomear/Trocar Ícone)
@@ -40,7 +40,7 @@ app.get('/addon/manifest.json', async (req, res) => {
         
         res.json(manifest);
     } catch (error) {
-        console.error("Erro no upstream:", error.message);
+        console.error("Erro upstream:", error.message);
         res.status(500).json({ error: "Falha ao obter manifesto original" });
     }
 });
@@ -64,6 +64,8 @@ const generatorHtml = `
     <title>Brazuca Wrapper</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Script de Rastreamento Vercel Analytics -->
+    <script src="/_vercel/insights/script.js"></script> 
     <style>
         body { background-color: #0a0a0a; color: #e5e5e5; font-family: sans-serif; }
         .card { background-color: #141414; border: 1px solid #262626; }
@@ -89,7 +91,7 @@ const generatorHtml = `
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 bg-black">
 
-    <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-8 border border-gray-800 relative">
+    <div class="w-full max-w-lg card rounded-2xl shadow-2xl p-6 border border-gray-800 relative">
         
         <!-- Header -->
         <div class="text-center mb-8">
@@ -136,7 +138,7 @@ const generatorHtml = `
                     
                     <input type="text" id="rd_key" placeholder="Cole sua API KEY" class="w-full input-dark px-4 py-3 rounded-lg text-sm mb-4" disabled>
                     
-                    <!-- Botão de Assinatura Único e Alinhado -->
+                    <!-- Botão de Assinatura Único -->
                     <a href="http://real-debrid.com/?id=6684575" target="_blank" class="btn-sub-rd w-full shadow-lg shadow-blue-900/20">
                         Assinar Real-Debrid <i class="fas fa-external-link-alt ml-2"></i>
                     </a>
@@ -151,7 +153,7 @@ const generatorHtml = `
                     
                     <input type="text" id="tb_key" placeholder="Cole sua API KEY" class="w-full input-dark px-4 py-3 rounded-lg text-sm mb-4" disabled>
                     
-                    <!-- Botão de Assinatura Único e Alinhado -->
+                    <!-- Botão de Assinatura Único -->
                     <a href="https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96" target="_blank" class="btn-sub-tb w-full shadow-lg shadow-purple-900/20">
                         Assinar TorBox <i class="fas fa-external-link-alt ml-2"></i>
                     </a>
