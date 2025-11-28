@@ -9,12 +9,11 @@ app.use(cors());
 // 1. CONFIGURAÇÕES PADRÃO (ESCOPO GLOBAL)
 // ============================================================
 const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-const DEFAULT_NAME = "Brazuca"; 
+const DEFAULT_NAME = "BR"; 
 const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
 const PROJECT_VERSION = "1.0.0"; 
 const STREMTHRU_HOST = "https://stremthrufortheweebs.midnightignite.me"; 
 
-const REFERRAL_RD = "6684575";
 const REFERRAL_TB = "b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96";
 
 // Links de Addons Extras
@@ -100,7 +99,7 @@ const generatorHtml = `
     <style>
         body { background-color: #0a0a0a; color: #e5e5e5; font-family: sans-serif; }
         .card { background-color: #141414; border: 1px solid #262626; }
-        .input-dark { background-color: #0b0c10; border: 1px solid #333; color: white; transition: 0.2s; }
+        .input-dark { background-color: #0a0a0a; border: 1px solid #333; color: white; transition: 0.2s; }
         .input-dark:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
         
         .btn-action { 
@@ -132,7 +131,7 @@ const generatorHtml = `
 
         <form class="space-y-6">
             
-            <!-- 1. Instância -->
+            <!-- 1. Instância (Escondido, usa STREMTHRU_HOST) -->
             <div class="hidden">
                 <label class="text-xs font-bold text-gray-500 uppercase ml-1">1. Servidor (Bridge)</label>
                 <select id="instance" class="w-full input-dark p-3 rounded-lg text-sm mt-1 cursor-pointer">
@@ -144,7 +143,7 @@ const generatorHtml = `
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="text-[10px] font-bold text-gray-500 uppercase">Nome do Addon</label>
-                    <input type="text" id="custom_name" value="${DEFAULT_NAME}" class="w-full input-dark p-2 rounded text-sm mt-1">
+                    <input type="text" id="custom_name" value="BR" class="w-full input-dark p-2 rounded text-sm mt-1">
                 </div>
                 <div>
                     <label class="text-[10px] font-bold text-gray-500 uppercase">Ícone (URL)</label>
@@ -167,8 +166,8 @@ const generatorHtml = `
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" id="use_torrentio" checked class="w-4 h-4 accent-red-600" onchange="validate()">
                         <span class="text-sm font-bold text-gray-300">Incluir Torrentio (PT/BR)</span>
-                    <p class="text-[10px] text-gray-500 mt-1 ml-1">Torrentio Customizado (Comando, MicoleãoDublado) incluso por padrão.</p>
                     </label>
+                    <p class="text-[10px] text-gray-500 mt-1 ml-1">Torrentio Customizado incluso para resultados em português/BR.</p>
                 </div>
             </div>
 
@@ -177,10 +176,10 @@ const generatorHtml = `
             
             <div class="space-y-6">
                 
-                <!-- TORBOX -->
+                <!-- TORBOX (Única Opção) -->
                 <div class="bg-[#1a1a1a] p-4 rounded-xl border border-gray-800">
                     <div class="flex items-center gap-2 mb-4">
-                        <input type="checkbox" id="use_tb" class="w-5 h-5 accent-purple-600 cursor-pointer" onchange="validate()">
+                        <input type="checkbox" id="use_tb" class="w-5 h-5 accent-purple-600 cursor-pointer" checked onchange="validate()">
                         <span class="text-sm font-bold text-white">TorBox</span>
                     </div>
                     
@@ -192,27 +191,11 @@ const generatorHtml = `
                         <a href="https://torbox.app/subscription?referral=${REFERRAL_TB}" target="_blank" class="btn-sub btn-sub-tb w-full shadow-lg shadow-purple-900/20 text-center font-bold">
                             Assinar TorBox <i class="fas fa-external-link-alt ml-2"></i>
                         </a>
-                        <p class="text-xs text-center text-green-400 mt-1">Ganhe 7 dias extras: <span id="tb_ref_code" class="font-mono text-xs cursor-pointer select-all underline" onclick="copyRefCode('${REFERRAL_TB}')">Copiar Código</span></p>
+                        <p class="text-xs text-center text-green-400 mt-1">Ganhe 7 dias extras/mês ou 84 dias por 1 ano assinado: <span id="tb_ref_code" class="font-mono text-xs cursor-pointer select-all underline" onclick="copyRefCode('${REFERRAL_TB}')">Copiar Código</span></p>
                     </div>
                 </div>
 
-                <!-- REAL DEBRID -->
-                <div class="bg-[#1a1a1a] p-4 rounded-xl border border-gray-800">
-                    <div class="flex items-center gap-2 mb-4">
-                        <input type="checkbox" id="use_rd" class="w-5 h-5 accent-blue-600 cursor-pointer" onchange="validate()">
-                        <span class="text-sm font-bold text-white">Real-Debrid</span>
-                    </div>
-                    
-                    <div class="input-container">
-                        <input type="text" id="rd_key" placeholder="Cole sua API KEY" class="w-full input-dark px-4 py-3 rounded-lg text-sm" >
-                    </div>
-                    
-                    <div class="grid grid-cols-1 gap-3">
-                        <a href="http://real-debrid.com/?id=${REFERRAL_RD}" target="_blank" class="btn-sub btn-sub-rd w-full shadow-lg shadow-blue-900/20 text-center font-bold">
-                            Assinar Real-Debrid <i class="fas fa-external-link-alt ml-2"></i>
-                        </a>
-                    </div>
-                </div>
+                <!-- REAL DEBRID (REMOVIDO) -->
             </div>
 
             <!-- Resultado -->
@@ -247,22 +230,17 @@ const generatorHtml = `
         }
 
         function validate() {
-            const rd = document.getElementById('use_rd').checked;
             const tb = document.getElementById('use_tb').checked;
-            const rdInput = document.getElementById('rd_key');
             const tbInput = document.getElementById('tb_key');
             const btn = document.getElementById('btnGenerate');
 
-            rdInput.disabled = !rd;
+            // Habilita/Desabilita inputs e aplica estilo
             tbInput.disabled = !tb;
-
-            rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
             tbInput.parentElement.style.opacity = tb ? '1' : '0.5';
 
-            if(!rd) rdInput.value = '';
             if(!tb) tbInput.value = '';
             
-            const isValid = (rd && rdInput.value.trim().length > 5) || (tb && tbInput.value.trim().length > 5);
+            const isValid = (tb && tbInput.value.trim().length > 5);
 
             if(isValid) {
                 btn.classList.replace('bg-gray-800', 'btn-action');
@@ -277,7 +255,6 @@ const generatorHtml = `
             }
         }
 
-        document.getElementById('rd_key').addEventListener('input', validate);
         document.getElementById('tb_key').addEventListener('input', validate);
 
         function generate() {
@@ -289,7 +266,7 @@ const generatorHtml = `
             const cLogo = document.getElementById('custom_logo').value.trim();
             const useTorrentio = document.getElementById('use_torrentio').checked;
             
-            const finalName = cName || "Brazuca"; 
+            const finalName = cName || "BR"; 
 
             let proxyParams = \`?name=\${encodeURIComponent(finalName)}\`;
             if(cLogo) proxyParams += \`&logo=\${encodeURIComponent(cLogo)}\`;
@@ -301,17 +278,13 @@ const generatorHtml = `
             // 1. Adiciona o Brazuca Customizado (Nosso Proxy)
             config.upstreams.push({ u: myMirrorUrl });
             
-            // 2. Adiciona o Torrentio PT (Opcional, com o nome limpo)
+            // 2. Adiciona o Torrentio PT (O nome é limpo para evitar duplicação)
             if (useTorrentio) {
-                // Removemos o nome do Torrentio para evitar concatenação
-                const torrentioCleanUrl = TORRENTIO_PT_URL + "?name=%20";
+                const torrentioCleanUrl = TORRENTIO_PT_URL + "?name=%20"; // Adiciona nome=%20
                 config.upstreams.push({ u: torrentioCleanUrl });
             }
             
             // 3. Debrids (Tokens)
-            if (document.getElementById('use_rd').checked) {
-                config.stores.push({ c: "rd", t: document.getElementById('rd_key').value.trim() });
-            }
             if (document.getElementById('use_tb').checked) {
                 config.stores.push({ c: "tb", t: document.getElementById('tb_key').value.trim() });
             }
@@ -375,6 +348,8 @@ app.get('/addon/manifest.json', async (req, res) => {
         manifest.description = `Wrapper customizado: ${customName}`;
         manifest.logo = customLogo;
         manifest.version = PROJECT_VERSION; 
+        
+        delete manifest.background; 
         
         res.json(manifest);
     } catch (error) {
