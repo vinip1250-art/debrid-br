@@ -14,10 +14,11 @@ const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
 const PROJECT_VERSION = "1.0.0"; 
 const STREMTHRU_HOST = "https://stremthrufortheweebs.midnightignite.me"; 
 
+const REFERRAL_RD = "6684575";
 const REFERRAL_TB = "b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96";
 
 // Links de Addons Extras
-const TORRENTIO_PT_BASE_URL = "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese";
+const TORRENTIO_PT_URL = "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese/manifest.json";
 
 // ============================================================
 // 2. ROTA MANIFESTO (Proxy)
@@ -99,7 +100,7 @@ const generatorHtml = `
     <style>
         body { background-color: #0a0a0a; color: #e5e5e5; font-family: sans-serif; }
         .card { background-color: #141414; border: 1px solid #262626; }
-        .input-dark { background-color: #0a0a0a; border: 1px solid #333; color: white; transition: 0.2s; }
+        .input-dark { background-color: #0b0c10; border: 1px solid #333; color: white; transition: 0.2s; }
         .input-dark:focus { border-color: #3b82f6; outline: none; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2); }
         
         .btn-action { 
@@ -166,8 +167,8 @@ const generatorHtml = `
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" id="use_torrentio" checked class="w-4 h-4 accent-red-600" onchange="validate()">
                         <span class="text-sm font-bold text-gray-300">Incluir Torrentio (PT/BR)</span>
+                    <p class="text-[10px] text-gray-500 mt-1 ml-1">Torrentio Customizado (Comando, MicoleãoDublado) incluso por padrão.</p>
                     </label>
-                    <p class="text-[10px] text-gray-500 mt-1 ml-1">Torrentio Customizado incluso para resultados em português/BR.</p>
                 </div>
             </div>
 
@@ -239,9 +240,6 @@ const generatorHtml = `
         const STREMTHRU_HOST = "${STREMTHRU_HOST}";
         const TORRENTIO_PT_URL = "${TORRENTIO_PT_URL}";
         const DEFAULT_LOGO_URL = "${DEFAULT_LOGO}";
-        
-        // CORREÇÃO: Nova URL do Torrentio com o parâmetro name=%20 (espaço)
-        const TORRENTIO_BLANK_URL = "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese/manifest.json?name=%20";
 
         function updatePreview() {
             const url = document.getElementById('custom_logo').value.trim();
@@ -255,7 +253,6 @@ const generatorHtml = `
             const tbInput = document.getElementById('tb_key');
             const btn = document.getElementById('btnGenerate');
 
-            // Habilita/Desabilita inputs e aplica estilo
             rdInput.disabled = !rd;
             tbInput.disabled = !tb;
 
@@ -301,13 +298,14 @@ const generatorHtml = `
 
             let config = { upstreams: [], stores: [] };
             
-            // 1. Adiciona o Brazuca Customizado (Nosso Proxy) - Nome principal e logo
+            // 1. Adiciona o Brazuca Customizado (Nosso Proxy)
             config.upstreams.push({ u: myMirrorUrl });
             
-            // 2. Adiciona o Torrentio PT (Com o nome em BRANCO)
+            // 2. Adiciona o Torrentio PT (Opcional, com o nome limpo)
             if (useTorrentio) {
-                // Usamos a URL Blank para que o nome do Torrentio seja ' '
-                config.upstreams.push({ u: TORRENTIO_BLANK_URL });
+                // Removemos o nome do Torrentio para evitar concatenação
+                const torrentioCleanUrl = TORRENTIO_PT_URL + "?name=%20";
+                config.upstreams.push({ u: torrentioCleanUrl });
             }
             
             // 3. Debrids (Tokens)
@@ -352,3 +350,71 @@ const generatorHtml = `
     </script>
 </body>
 </html>
+`;
+
+app.get('/', (req, res) => res.send(generatorHtml));
+app.get('/configure', (req, res) => res.send(generatorHtml));
+
+// Rota do Manifesto (Proxy)
+app.get('/addon/manifest.json', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=60'); 
+    
+    try {
+        const customName = req.query.name || DEFAULT_NAME;
+        const customLogo = req.query.logo || DEFAULT_LOGO;
+        
+        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
+        const manifest = response.data;
+
+        const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
+        
+        manifest.id = `community.brazuca.wrapper.${idSuffix}`;
+        manifest.name = customName; 
+        manifest.description = `Wrapper customizado: ${customName}`;
+        manifest.logo = customLogo;
+        manifest.version = PROJECT_VERSION; 
+        
+        res.json(manifest);
+    } catch (error) {
+        console.error("Upstream manifesto error:", error.message);
+        res.status(500).json({ error: "Upstream manifesto error" });
+    }
+});
+
+// Rotas de Redirecionamento (Streams/Catálogos)
+app.get('/addon/stream/:type/:id.json', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    try {
+        const upstreamUrl = `${UPSTREAM_BASE}${req.path}`;
+        const response = await axios.get(upstreamUrl);
+        let streams = response.data.streams || [];
+
+        return res.json({ streams: streams });
+
+    } catch (error) {
+        console.error("Stream Fetch Error:", error.message);
+        return res.status(404).json({ streams: [] }); 
+    }
+});
+
+// Redireciona todos os outros recursos (catálogos, meta, etc.)
+app.get('/addon/*', (req, res) => {
+    const originalPath = req.url.replace('/addon', '');
+    const upstreamUrl = `${UPSTREAM_BASE}${originalPath}`;
+    res.redirect(307, upstreamUrl);
+});
+
+
+// Exporta a aplicação para o Vercel Serverless
+const PORT = process.env.PORT || 7000;
+if (process.env.VERCEL) {
+    module.exports = app;
+} else {
+    app.listen(PORT, () => {
+        console.log(`Gerador rodando na porta ${PORT}`);
+    });
+}
