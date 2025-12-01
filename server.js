@@ -14,9 +14,10 @@ const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
 const PROJECT_VERSION = "1.0.0"; 
 const STREMTHRU_HOST = "https://stremthrufortheweebs.midnightignite.me"; 
 
-const REFERRAL_RD = "6684575"; // <-- Real-Debrid de volta
 const REFERRAL_TB = "b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96";
+const REFERRAL_RD = "6684575"; // [NOVO] Adicionado Referral RD
 
+// Links de Addons Extras
 const TORRENTIO_PT_URL = "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese/manifest.json";
 
 // ============================================================
@@ -50,7 +51,7 @@ const AIO_CONFIG_JSON = {
         "timeout": 15000,
         "resources": ["stream"],
         "mediaTypes": [],
-        "services": ["torbox", "realdebrid"], // Adicionado RD aqui se ativado
+        "services": ["torbox"], // RD será adicionado via script se selecionado
         "includeP2P": false,
         "useMultipleInstances": false
       }
@@ -304,13 +305,6 @@ const generatorHtml = `
                     </label>
                     <p class="text-[10px] text-gray-500 mt-1 ml-1">Torrentio Customizado incluso para resultados em português/BR.</p>
                 </div>
-
-                <!-- JACKETTIO (NOVA ENTRADA) -->
-                <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800">
-                    <label class="text-xs font-bold text-gray-500 uppercase">Jackettio (Manifest URL)</label>
-                    <input type="text" id="jackettio_manifest_url" placeholder="URL do Manifesto (https://jackettio.../manifest.json)" class="w-full input-dark p-2 rounded text-sm mt-1">
-                    <p class="text-[10px] text-gray-500 mt-1 ml-1">Insira a URL completa do manifesto gerado pelo seu Jackettio.</p>
-                </div>
             </div>
 
             <!-- 3. Debrids (Tokens) -->
@@ -337,7 +331,7 @@ const generatorHtml = `
                     </div>
                 </div>
 
-                <!-- REAL DEBRID (REINSERIDO) -->
+                <!-- REAL DEBRID -->
                 <div class="bg-[#1a1a1a] p-4 rounded-xl border border-gray-800">
                     <div class="flex items-center gap-2 mb-4">
                         <input type="checkbox" id="use_rd" class="w-5 h-5 accent-blue-600 cursor-pointer" onchange="validate()">
@@ -423,26 +417,25 @@ const generatorHtml = `
         }
 
         function validate() {
-            const rd = document.getElementById('use_rd').checked;
             const tb = document.getElementById('use_tb').checked;
-            const rdInput = document.getElementById('rd_key');
+            const rd = document.getElementById('use_rd').checked;
+            
             const tbInput = document.getElementById('tb_key');
+            const rdInput = document.getElementById('rd_key');
             const btn = document.getElementById('btnGenerate');
 
-            rdInput.disabled = !rd;
             tbInput.disabled = !tb;
-
-            rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
             tbInput.parentElement.style.opacity = tb ? '1' : '0.5';
-
-            if(!rd) rdInput.value = '';
             if(!tb) tbInput.value = '';
+
+            rdInput.disabled = !rd;
+            rdInput.parentElement.style.opacity = rd ? '1' : '0.5';
+            if(!rd) rdInput.value = '';
             
-            const isValid = (rd && rdInput.value.trim().length > 5) || 
-                            (tb && tbInput.value.trim().length > 5) || 
-                            (document.getElementById('jackettio_manifest_url').value.trim().startsWith('http'));
-                            
-            if(isValid) {
+            const isTbValid = (tb && tbInput.value.trim().length > 5);
+            const isRdValid = (rd && rdInput.value.trim().length > 5);
+
+            if(isTbValid || isRdValid) {
                 btn.classList.replace('bg-gray-800', 'btn-action');
                 btn.classList.replace('text-gray-500', 'text-white');
                 btn.classList.remove('cursor-not-allowed');
@@ -455,9 +448,12 @@ const generatorHtml = `
             }
         }
 
-        document.getElementById('rd_key').addEventListener('input', validate);
         document.getElementById('tb_key').addEventListener('input', validate);
-        document.getElementById('jackettio_manifest_url').addEventListener('input', validate);
+        document.getElementById('rd_key').addEventListener('input', validate);
+        
+        // Checkboxes trigger validation too
+        document.getElementById('use_tb').addEventListener('change', validate);
+        document.getElementById('use_rd').addEventListener('change', validate);
 
         function generate() {
             let host = STREMTHRU_HOST;
@@ -467,11 +463,11 @@ const generatorHtml = `
             const cName = document.getElementById('custom_name').value.trim();
             const cLogo = document.getElementById('custom_logo').value.trim();
             const useTorrentio = document.getElementById('use_torrentio').checked;
-            const jackettioManifestUrl = document.getElementById('jackettio_manifest_url').value.trim();
-            const rdKey = document.getElementById('rd_key').value.trim();
+            
             const tbKey = document.getElementById('tb_key').value.trim();
+            const rdKey = document.getElementById('rd_key').value.trim();
 
-            const finalName = cName || "Brazuca"; 
+            const finalName = cName || "BR"; 
 
             let proxyParams = \`?name=\${encodeURIComponent(finalName)}\`;
             if(cLogo) proxyParams += \`&logo=\${encodeURIComponent(cLogo)}\`;
@@ -480,24 +476,24 @@ const generatorHtml = `
 
             let config = { upstreams: [], stores: [] };
             
+            // 1. Adiciona o Brazuca Customizado (Nosso Proxy)
             config.upstreams.push({ u: myMirrorUrl });
             
+            // 2. Adiciona o Torrentio PT (PADRÃO)
             if (useTorrentio) {
                 config.upstreams.push({ u: TORRENTIO_PT_URL });
             }
             
-            if (jackettioManifestUrl) {
-                 config.upstreams.push({ u: jackettioManifestUrl });
-            }
-            
-            if (document.getElementById('use_rd').checked) {
-                config.stores.push({ c: "rd", t: rdKey });
-            }
+            // 3. Debrids (Tokens)
             if (document.getElementById('use_tb').checked) {
                 config.stores.push({ c: "tb", t: tbKey });
             }
+            if (document.getElementById('use_rd').checked) {
+                config.stores.push({ c: "rd", t: rdKey });
+            }
 
             const b64 = btoa(JSON.stringify(config));
+            
             const hostClean = host.replace(/^https?:\\/\\//, '');
             const httpsUrl = \`\${host}/stremio/wrap/\${b64}/manifest.json\`;
             const stremioUrl = \`stremio://\${hostClean}/stremio/wrap/\${b64}/manifest.json\`; 
@@ -526,7 +522,7 @@ const generatorHtml = `
                 const tbService = aioConfig.services.find(s => s.id === 'torbox');
                 if (tbService) {
                     tbService.enabled = true;
-                    tbService.credentials = { apiKey: tbKey }; // AIO geralmente usa 'apiKey' para TorBox também
+                    tbService.credentials = { apiKey: tbKey }; 
                 }
             }
             
@@ -561,67 +557,9 @@ const generatorHtml = `
 </html>
 `;
 
-// Rota Principal (Servir HTML)
-app.get('/', (req, res) => res.send(generatorHtml));
-app.get('/configure', (req, res) => res.send(generatorHtml));
-
-// Rota do Manifesto (Proxy)
-app.get('/addon/manifest.json', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 'public, max-age=60'); 
-    
-    try {
-        const customName = req.query.name || DEFAULT_NAME;
-        const customLogo = req.query.logo || DEFAULT_LOGO;
-        
-        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
-        const manifest = response.data;
-
-        const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
-        
-        manifest.id = `community.brazuca.wrapper.${idSuffix}`;
-        manifest.name = customName; 
-        manifest.description = `Wrapper customizado: ${customName}`;
-        manifest.logo = customLogo;
-        manifest.version = PROJECT_VERSION; 
-        
-        delete manifest.background; 
-        
-        res.json(manifest);
-    } catch (error) {
-        console.error("Upstream manifesto error:", error.message);
-        res.status(500).json({ error: "Upstream manifesto error" });
-    }
-});
-
-// Rotas de Redirecionamento (Streams/Catálogos)
-app.get('/addon/stream/:type/:id.json', async (req, res) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    
-    try {
-        const upstreamUrl = `${UPSTREAM_BASE}${req.path}`;
-        const response = await axios.get(upstreamUrl);
-        let streams = response.data.streams || [];
-
-        return res.json({ streams: streams });
-
-    } catch (error) {
-        console.error("Stream Fetch Error:", error.message);
-        return res.status(404).json({ streams: [] }); 
-    }
-});
-
-// Redireciona todos os outros recursos (catálogos, meta, etc.)
-app.get('/addon/*', (req, res) => {
-    const originalPath = req.url.replace('/addon', '');
-    const upstreamUrl = `${UPSTREAM_BASE}${originalPath}`;
-    res.redirect(307, upstreamUrl);
-});
-
-
-// Exporta a aplicação para o Vercel Serverless
+// ============================================================
+// 7. EXPORTAÇÃO
+// ============================================================
 const PORT = process.env.PORT || 7000;
 if (process.env.VERCEL) {
     module.exports = app;
