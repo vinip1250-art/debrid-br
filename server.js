@@ -9,7 +9,7 @@ app.use(cors());
 // 1. CONFIGURAÇÕES PADRÃO (ESCOPO GLOBAL)
 // ============================================================
 const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-const DEFAULT_NAME = "Brazuca"; 
+const DEFAULT_NAME = "BR"; 
 const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
 const PROJECT_VERSION = "2.0.0"; // Atualizado para 2.0
 const STREMTHRU_HOST = "https://stremthru.atbphosting.com"; // Host Atualizado
