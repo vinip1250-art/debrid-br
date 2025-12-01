@@ -9,29 +9,34 @@ app.use(cors());
 // 1. CONFIGURAÇÕES PADRÃO (ESCOPO GLOBAL)
 // ============================================================
 const UPSTREAM_BASE = "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club";
-const DEFAULT_NAME = "Brazuca"; 
+const DEFAULT_NAME = "BR"; 
 const DEFAULT_LOGO = "https://i.imgur.com/KVpfrAk.png";
 const PROJECT_VERSION = "1.0.0"; 
-const STREMTHRU_HOST = "https://stremthru-btie.onrender.com"; 
+const STREMTHRU_HOST = "https://stremthrufortheweebs.midnightignite.me"; 
 
-const REFERRAL_RD = "6684575";
+const REFERRAL_RD = "6684575"; // <-- Real-Debrid de volta
 const REFERRAL_TB = "b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96";
 
 const TORRENTIO_PT_URL = "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese/manifest.json";
 
 // ============================================================
-// 2. TEMPLATE AIOSTREAMS (PT-BR)
+// 2. CONTEÚDO AIOSTREAMS (CONFIGURAÇÃO COMPLETA)
 // ============================================================
-const AIO_CONFIG_TEMPLATE = {
+const AIO_CONFIG_JSON = {
   "services": [
-    { "id": "torbox", "enabled": false, "credentials": {} },
+    { "id": "torbox", "enabled": true, "credentials": {} },
     { "id": "realdebrid", "enabled": false, "credentials": {} },
     { "id": "alldebrid", "enabled": false, "credentials": {} },
     { "id": "premiumize", "enabled": false, "credentials": {} },
     { "id": "debridlink", "enabled": false, "credentials": {} },
+    { "id": "stremio_nntp", "enabled": false, "credentials": {} },
+    { "id": "nzbdav", "enabled": false, "credentials": {} },
+    { "id": "altmount", "enabled": false, "credentials": {} },
     { "id": "offcloud", "enabled": false, "credentials": {} },
     { "id": "putio", "enabled": false, "credentials": {} },
     { "id": "easynews", "enabled": false, "credentials": {} },
+    { "id": "easydebrid", "enabled": false, "credentials": {} },
+    { "id": "debrider", "enabled": false, "credentials": {} },
     { "id": "pikpak", "enabled": false, "credentials": {} },
     { "id": "seedr", "enabled": false, "credentials": {} }
   ],
@@ -45,7 +50,7 @@ const AIO_CONFIG_TEMPLATE = {
         "timeout": 15000,
         "resources": ["stream"],
         "mediaTypes": [],
-        "services": ["torbox"],
+        "services": ["torbox", "realdebrid"], // Adicionado RD aqui se ativado
         "includeP2P": false,
         "useMultipleInstances": false
       }
@@ -66,6 +71,19 @@ const AIO_CONFIG_TEMPLATE = {
       }
     },
     {
+      "type": "bitmagnet",
+      "instanceId": "437",
+      "enabled": true,
+      "options": {
+        "name": "Bitmagnet",
+        "timeout": 15000,
+        "mediaTypes": [],
+        "services": ["torbox"],
+        "useMultipleInstances": false,
+        "paginate": false
+      }
+    },
+    {
       "type": "tmdb-addon",
       "instanceId": "6d5",
       "enabled": true,
@@ -75,7 +93,9 @@ const AIO_CONFIG_TEMPLATE = {
         "resources": ["catalog", "meta"],
         "url": "https://tmdb.elfhosted.com/N4IgTgDgJgRg1gUwJ4gFwgC4AYC0AzMBBHSWEAGhAjAHsA3ASygQEkBbWFqNTMAVwQVwCDHzAA7dp27oM-QZQA2AQ3EBzPsrWD0EDDgBCAJSEBnOQmVsG6tAG0Q4vAA8hACxhshUcRCFW-SgBjfiEINkCQZQxItRo-AF1g6OVFGjVTe1AmHgwOGAA6DHihDCQIHRA2egYFRytKgAV4vhUwMzcaAHcWcQAJGjYdOQEAX3JsmUx8opLKMoqeUwQwWszKcQaeZohW5XbKU06e-sHh+XHJ3JmLcSgbNVLyyurGOs2hngAVQjuHju6vQGn1QIwQlxAOVkN1+91s82eSxWayEH0qPwQf3hICOgNOILBEKhOIsVgeBScrgRi3Qr1qqK26AAciI8IoGFScccgWc0ISJpCpuZCGT1BSXE8aTjkQh1vUQSAWRg2RyASdgecxgLicLLNYxR4vNSXjV3oyQH0DAB5AAEAFllJzcereaCLtqhaT9WoCobJZVlqtZQyFZbbQ6ndz8ZrwR6ll7yT5IgsTW8Q5UACIMUziZAAajVPIJ7qu6F1op9Sf9SKDcrRPCzOfzhejfJLgvjIu9BQC1dppvT21WQxtADUmAgaC2NW2taWSV3yb3jTWURtzY1hwgxxOp4cozO3XOO2WE2LwsnEf20+uFY19lYaHxxBgC-u8Yf+fPy92L33pbWg7oPeYCPs+r7Tq6X4nguepLjE-50maCoAIIQBAijbl8o5vlyH5Qe2Opnj60SXlKgZrvKlRoRhWE4ZBxbHkRi5inEZGpvSt6VAA4mkMDxCoKDvi6jGxt+xEFCEfCIQOXE8AAwvw4hBG4SC0IoigMTGRKeixPpsf+FHBnJ6C8TQ-EYcoQl4SJ2lxqeemSaEK5ljKdbmopz4qWpNAaVps7gkkUTaEY0T-OgJjJOY8lPi+aAAKzCShIVheovTcZihCZLI8hCJiygwJhyUIKFGDhSAeCpMsarFaVDwAOoMBgbhSDAdW2OglWKNVoxAA/manifest.json",
         "Enable Adult Content": false,
+        "hideEpisodeThumbnails": false,
         "provideImdbId": true,
+        "ageRating": "R",
         "language": "pt-BR"
       }
     },
@@ -128,7 +148,16 @@ const AIO_CONFIG_TEMPLATE = {
 };
 
 // ============================================================
-// 3. ROTA MANIFESTO (Proxy)
+// 3. ROTAS DE DOWNLOAD DE ARQUIVOS
+// ============================================================
+app.get('/download/aiostreams-config.json', (req, res) => {
+    res.setHeader('Content-Disposition', 'attachment; filename="aiostreams-config-PT-BR.json"');
+    res.setHeader('Content-Type', 'application/json');
+    res.send(JSON.stringify(AIO_CONFIG_JSON, null, 2));
+});
+
+// ============================================================
+// 4. ROTA MANIFESTO (Proxy)
 // ============================================================
 app.get('/addon/manifest.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -160,9 +189,8 @@ app.get('/addon/manifest.json', async (req, res) => {
 });
 
 // ============================================================
-// 4. ROTA REDIRECIONADORA (FIX 404)
+// 5. ROTA REDIRECIONADORA
 // ============================================================
-
 app.get('/addon/*', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     
@@ -171,7 +199,6 @@ app.get('/addon/*', async (req, res) => {
     
     if (originalPath.startsWith('/stream/')) {
         res.setHeader('Content-Type', 'application/json');
-        
         try {
             const response = await axios.get(upstreamUrl);
             let streams = response.data.streams || [];
@@ -186,7 +213,7 @@ app.get('/addon/*', async (req, res) => {
 
 
 // ============================================================
-// 5. INTERFACE
+// 6. INTERFACE DO GERADOR
 // ============================================================
 const generatorHtml = `
 <!DOCTYPE html>
@@ -215,6 +242,12 @@ const generatorHtml = `
         .btn-sub-rd { background: #2563eb; color: white; border-color: #1e40af; } 
         .btn-sub-tb:hover { background: #32cd32; }
         .btn-sub-rd:hover { background: #1e40af; }
+
+        .btn-file {
+            background: #1f2937; color: #9ca3af; border: 1px solid #374151;
+            font-size: 0.75rem; padding: 8px 12px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; transition: 0.2s; text-decoration: none;
+        }
+        .btn-file:hover { background: #374151; color: white; border-color: #4b5563; }
         
         .divider { border-top: 1px solid #262626; margin: 25px 0; position: relative; }
         .input-container { margin-bottom: 1.5rem; }
@@ -226,7 +259,7 @@ const generatorHtml = `
         
         <!-- Header -->
         <div class="text-center mb-8">
-            <img src="${DEFAULT_LOGO}" id="previewLogo" class="w-20 h-20 mx-auto mb-3 rounded-full border-2 border-gray-800 shadow-lg object-cover">
+            <img src="https://i.imgur.com/KVpfrAk.png" id="previewLogo" class="w-20 h-20 mx-auto mb-3 rounded-full border-2 border-gray-800 shadow-lg object-cover">
             <h1 class="text-3xl font-extrabold text-white tracking-tight">Brazuca <span class="text-blue-500">Wrapper</span></h1>
             <p class="text-gray-500 text-xs mt-1 uppercase tracking-widest">GERADOR STREMTHRU V${PROJECT_VERSION}</p>
         </div>
@@ -264,7 +297,7 @@ const generatorHtml = `
                     </label>
                 </div>
                 
-                 <div class="bg-[#1a1a1a] p-3 rounded border border-gray-800">
+                 <div class="bg-[#161616] p-3 rounded border border-gray-800">
                     <label class="flex items-center gap-3 cursor-pointer">
                         <input type="checkbox" id="use_torrentio" checked class="w-4 h-4 accent-red-600" onchange="validate()">
                         <span class="text-sm font-bold text-gray-300">Incluir Torrentio (PT/BR)</span>
@@ -300,11 +333,11 @@ const generatorHtml = `
                         <a href="https://torbox.app/subscription?referral=${REFERRAL_TB}" target="_blank" class="btn-sub btn-sub-tb w-full shadow-lg shadow-purple-900/20 text-center font-bold">
                             Assinar TorBox <i class="fas fa-external-link-alt ml-2"></i>
                         </a>
-                        <p class="text-xs text-center text-green-400 mt-1">Ganhe 7 dias extras: <span id="tb_ref_code" class="font-mono text-xs cursor-pointer select-all underline" onclick="copyRefCode('${REFERRAL_TB}')">Copiar Código</span></p>
+                        <p class="text-xs text-center text-green-400 mt-1">Ganhe 7 dias extras/mês ou 84 dias por 1 ano assinado: <span id="tb_ref_code" class="font-mono text-xs cursor-pointer select-all underline" onclick="copyRefCode('${REFERRAL_TB}')">Copiar Código</span></p>
                     </div>
                 </div>
 
-                <!-- REAL DEBRID -->
+                <!-- REAL DEBRID (REINSERIDO) -->
                 <div class="bg-[#1a1a1a] p-4 rounded-xl border border-gray-800">
                     <div class="flex items-center gap-2 mb-4">
                         <input type="checkbox" id="use_rd" class="w-5 h-5 accent-blue-600 cursor-pointer" onchange="validate()">
@@ -330,7 +363,7 @@ const generatorHtml = `
                     <button type="button" onclick="copyLink()" class="absolute right-1 top-1 bottom-1 bg-blue-900 hover:bg-blue-800 text-white px-3 rounded text-xs font-bold transition">COPY</button>
                 </div>
                 
-                <a id="installBtn" href="#" class="block w-full btn-action py-3.5 rounded-xl text-center font-bold text-sm uppercase tracking-wide shadow-lg mb-4">
+                <a id="installBtn" href="#" class="block w-full btn-action py-3.5 rounded-xl text-center font-bold text-sm uppercase tracking-widest shadow-lg">
                     INSTALAR BRAZUCA WRAPPER
                 </a>
 
@@ -347,6 +380,30 @@ const generatorHtml = `
             <button type="button" onclick="generate()" id="btnGenerate" class="w-full bg-gray-800 text-gray-500 py-3.5 rounded-xl text-sm font-bold cursor-not-allowed transition" disabled>
                 GERAR CONFIGURAÇÃO
             </button>
+            
+            <!-- EXTRAS AIOSTREAMS -->
+            <div class="mt-8 pt-6 border-t border-gray-800">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Extras: AIOStreams (PT-BR)</h3>
+                    <span class="bg-purple-900/30 text-purple-400 text-[10px] px-2 py-0.5 rounded border border-purple-900">Recomendado</span>
+                </div>
+                
+                <div class="bg-[#111] p-4 rounded-xl border border-gray-800">
+                    <p class="text-xs text-gray-500 mb-3 leading-relaxed">
+                        Configure o <b>AIOStreams</b> com foco em conteúdo brasileiro usando o arquivo de configuração abaixo.
+                    </p>
+                    
+                    <div class="mb-3">
+                        <a href="/download/aiostreams-config.json" class="btn-file w-full" download>
+                            <i class="fas fa-file-code text-blue-400 mr-2"></i> Baixar Configuração Completa
+                        </a>
+                    </div>
+                    
+                    <a href="https://aiostreamsfortheweebsstable.midnightignite.me/stremio/configure?menu=save-install" target="_blank" class="block w-full bg-[#1f2937] hover:bg-[#374151] text-gray-300 hover:text-white font-medium text-xs py-2.5 rounded-lg text-center transition border border-gray-700">
+                        Abrir AIOStreams (Midnight) <i class="fas fa-external-link-alt ml-1 text-[10px]"></i>
+                    </a>
+                </div>
+            </div>
 
         </form>
     </div>
@@ -355,9 +412,10 @@ const generatorHtml = `
 
     <script>
         const STREMTHRU_HOST = "${STREMTHRU_HOST}";
+        const REFERRAL_TB = "${REFERRAL_TB}";
+        const REFERRAL_RD = "${REFERRAL_RD}";
         const TORRENTIO_PT_URL = "${TORRENTIO_PT_URL}";
-        const DEFAULT_LOGO_URL = "${DEFAULT_LOGO}";
-        const AIO_TEMPLATE = ${JSON.stringify(AIO_CONFIG_TEMPLATE)};
+        const AIO_TEMPLATE = ${JSON.stringify(AIO_CONFIG_JSON)};
 
         function updatePreview() {
             const url = document.getElementById('custom_logo').value.trim();
@@ -456,6 +514,12 @@ const generatorHtml = `
                     rdService.enabled = true;
                     rdService.credentials = { apiKey: rdKey };
                 }
+                
+                // Ativar RD no preset do stremthruTorz se não estiver lá
+                const preset = aioConfig.presets.find(p => p.type === 'stremthruTorz');
+                if(preset && !preset.options.services.includes('realdebrid')) {
+                    preset.options.services.push('realdebrid');
+                }
             }
             
             if (document.getElementById('use_tb').checked && tbKey) {
@@ -497,9 +561,64 @@ const generatorHtml = `
 </html>
 `;
 
-// Rotas de Geração/Interface
+// Rota Principal (Servir HTML)
 app.get('/', (req, res) => res.send(generatorHtml));
 app.get('/configure', (req, res) => res.send(generatorHtml));
+
+// Rota do Manifesto (Proxy)
+app.get('/addon/manifest.json', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=60'); 
+    
+    try {
+        const customName = req.query.name || DEFAULT_NAME;
+        const customLogo = req.query.logo || DEFAULT_LOGO;
+        
+        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
+        const manifest = response.data;
+
+        const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
+        
+        manifest.id = `community.brazuca.wrapper.${idSuffix}`;
+        manifest.name = customName; 
+        manifest.description = `Wrapper customizado: ${customName}`;
+        manifest.logo = customLogo;
+        manifest.version = PROJECT_VERSION; 
+        
+        delete manifest.background; 
+        
+        res.json(manifest);
+    } catch (error) {
+        console.error("Upstream manifesto error:", error.message);
+        res.status(500).json({ error: "Upstream manifesto error" });
+    }
+});
+
+// Rotas de Redirecionamento (Streams/Catálogos)
+app.get('/addon/stream/:type/:id.json', async (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    try {
+        const upstreamUrl = `${UPSTREAM_BASE}${req.path}`;
+        const response = await axios.get(upstreamUrl);
+        let streams = response.data.streams || [];
+
+        return res.json({ streams: streams });
+
+    } catch (error) {
+        console.error("Stream Fetch Error:", error.message);
+        return res.status(404).json({ streams: [] }); 
+    }
+});
+
+// Redireciona todos os outros recursos (catálogos, meta, etc.)
+app.get('/addon/*', (req, res) => {
+    const originalPath = req.url.replace('/addon', '');
+    const upstreamUrl = `${UPSTREAM_BASE}${originalPath}`;
+    res.redirect(307, upstreamUrl);
+});
 
 
 // Exporta a aplicação para o Vercel Serverless
