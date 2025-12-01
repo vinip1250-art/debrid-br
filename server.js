@@ -15,13 +15,13 @@ const PROJECT_VERSION = "1.0.0";
 const STREMTHRU_HOST = "https://stremthrufortheweebs.midnightignite.me"; 
 
 const REFERRAL_TB = "b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96";
-const REFERRAL_RD = "6684575"; // [NOVO] Adicionado Referral RD
+const REFERRAL_RD = "6684575"; // Real-Debrid
 
 // Links de Addons Extras
 const TORRENTIO_PT_URL = "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese/manifest.json";
 
 // ============================================================
-// 2. CONTEÚDO AIOSTREAMS (CONFIGURAÇÃO COMPLETA)
+// 2. CONTEÚDO AIOSTREAMS (CONFIGURAÇÃO)
 // ============================================================
 const AIO_CONFIG_JSON = {
   "services": [
@@ -51,7 +51,7 @@ const AIO_CONFIG_JSON = {
         "timeout": 15000,
         "resources": ["stream"],
         "mediaTypes": [],
-        "services": ["torbox"], // RD será adicionado via script se selecionado
+        "services": ["torbox"], // RD será injetado via script se selecionado
         "includeP2P": false,
         "useMultipleInstances": false
       }
@@ -149,72 +149,7 @@ const AIO_CONFIG_JSON = {
 };
 
 // ============================================================
-// 3. ROTAS DE DOWNLOAD DE ARQUIVOS
-// ============================================================
-app.get('/download/aiostreams-config.json', (req, res) => {
-    res.setHeader('Content-Disposition', 'attachment; filename="aiostreams-config-PT-BR.json"');
-    res.setHeader('Content-Type', 'application/json');
-    res.send(JSON.stringify(AIO_CONFIG_JSON, null, 2));
-});
-
-// ============================================================
-// 4. ROTA MANIFESTO (Proxy)
-// ============================================================
-app.get('/addon/manifest.json', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Cache-Control', 'public, max-age=60'); 
-    
-    try {
-        const customName = req.query.name || DEFAULT_NAME;
-        const customLogo = req.query.logo || DEFAULT_LOGO;
-        
-        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
-        const manifest = response.data;
-
-        const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
-        
-        manifest.id = `community.brazuca.wrapper.${idSuffix}`;
-        manifest.name = customName; 
-        manifest.description = `Wrapper customizado: ${customName}`;
-        manifest.logo = customLogo;
-        manifest.version = PROJECT_VERSION; 
-        
-        delete manifest.background; 
-        
-        res.json(manifest);
-    } catch (error) {
-        console.error("Upstream manifesto error:", error.message);
-        res.status(500).json({ error: "Upstream manifesto error" });
-    }
-});
-
-// ============================================================
-// 5. ROTA REDIRECIONADORA
-// ============================================================
-app.get('/addon/*', async (req, res) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    
-    const originalPath = req.url.replace('/addon', '');
-    const upstreamUrl = `${UPSTREAM_BASE}${originalPath}`;
-    
-    if (originalPath.startsWith('/stream/')) {
-        res.setHeader('Content-Type', 'application/json');
-        try {
-            const response = await axios.get(upstreamUrl);
-            let streams = response.data.streams || [];
-            return res.json({ streams: streams });
-        } catch (error) {
-            console.error("Stream Fetch Error:", error.message);
-            return res.status(404).json({ streams: [] }); 
-        }
-    }
-    res.redirect(307, upstreamUrl);
-});
-
-
-// ============================================================
-// 6. INTERFACE DO GERADOR
+// 3. INTERFACE DO GERADOR HTML (DEFINIDO ANTES DAS ROTAS)
 // ============================================================
 const generatorHtml = `
 <!DOCTYPE html>
@@ -260,7 +195,7 @@ const generatorHtml = `
         
         <!-- Header -->
         <div class="text-center mb-8">
-            <img src="https://i.imgur.com/KVpfrAk.png" id="previewLogo" class="w-20 h-20 mx-auto mb-3 rounded-full border-2 border-gray-800 shadow-lg object-cover">
+            <img src="${DEFAULT_LOGO}" id="previewLogo" class="w-20 h-20 mx-auto mb-3 rounded-full border-2 border-gray-800 shadow-lg object-cover">
             <h1 class="text-3xl font-extrabold text-white tracking-tight">Brazuca <span class="text-blue-500">Wrapper</span></h1>
             <p class="text-gray-500 text-xs mt-1 uppercase tracking-widest">GERADOR STREMTHRU V${PROJECT_VERSION}</p>
         </div>
@@ -556,6 +491,73 @@ const generatorHtml = `
 </body>
 </html>
 `;
+
+// ============================================================
+// 4. ROTAS DO SERVIDOR (ORDEM CORRIGIDA)
+// ============================================================
+
+// 4.1 Rota Principal (INTERFACE) - DEVE SER A PRIMEIRA GET '/'
+app.get('/', (req, res) => res.send(generatorHtml));
+app.get('/configure', (req, res) => res.send(generatorHtml));
+
+// 4.2 Rota de Download de Arquivos
+app.get('/download/aiostreams-config.json', (req, res) => {
+    res.setHeader('Content-Disposition', 'attachment; filename="aiostreams-config-PT-BR.json"');
+    res.setHeader('Content-Type', 'application/json');
+    res.send(JSON.stringify(AIO_CONFIG_JSON, null, 2));
+});
+
+// 4.3 Rota do Manifesto (Proxy)
+app.get('/addon/manifest.json', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'public, max-age=60'); 
+    
+    try {
+        const customName = req.query.name || DEFAULT_NAME;
+        const customLogo = req.query.logo || DEFAULT_LOGO;
+        
+        const response = await axios.get(`${UPSTREAM_BASE}/manifest.json`);
+        const manifest = response.data;
+
+        const idSuffix = Buffer.from(customName).toString('hex').substring(0, 10);
+        
+        manifest.id = `community.brazuca.wrapper.${idSuffix}`;
+        manifest.name = customName; 
+        manifest.description = `Wrapper customizado: ${customName}`;
+        manifest.logo = customLogo;
+        manifest.version = PROJECT_VERSION; 
+        
+        delete manifest.background; 
+        
+        res.json(manifest);
+    } catch (error) {
+        console.error("Upstream manifesto error:", error.message);
+        res.status(500).json({ error: "Upstream manifesto error" });
+    }
+});
+
+// 4.4 Rota Redirecionadora (Catch-All para /addon/*)
+app.get('/addon/*', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    
+    const originalPath = req.url.replace('/addon', '');
+    const upstreamUrl = `${UPSTREAM_BASE}${originalPath}`;
+    
+    if (originalPath.startsWith('/stream/')) {
+        res.setHeader('Content-Type', 'application/json');
+        try {
+            const response = await axios.get(upstreamUrl);
+            let streams = response.data.streams || [];
+            return res.json({ streams: streams });
+        } catch (error) {
+            console.error("Stream Fetch Error:", error.message);
+            return res.status(404).json({ streams: [] }); 
+        }
+    }
+    res.redirect(307, upstreamUrl);
+});
+
 
 // ============================================================
 // 7. EXPORTAÇÃO
