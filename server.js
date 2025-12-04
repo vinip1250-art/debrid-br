@@ -1007,7 +1007,7 @@ const generatorHtml = `
                         </a>
                     </div>
                     
-                    <a href="https://aiostreams.elfhosted.com/configure" target="_blank" class="block w-full bg-[#1f2937] hover:bg-[#374151] text-gray-300 hover:text-white font-medium text-xs py-2.5 rounded-lg text-center transition border border-gray-700">
+                    <a href="https://aiostreamsfortheweebsstable.midnightignite.me/stremio/configure?menu=save-install" target="_blank" class="block w-full bg-[#1f2937] hover:bg-[#374151] text-gray-300 hover:text-white font-medium text-xs py-2.5 rounded-lg text-center transition border border-gray-700">
                         Abrir AIOStreams (Config) <i class="fas fa-external-link-alt ml-1 text-[10px]"></i>
                     </a>
                 </div>
