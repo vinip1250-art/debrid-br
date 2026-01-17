@@ -33,11 +33,29 @@ app.get("/:id/manifest.json", async (req, res) => {
 
   res.json({
     id: `brazuca-debrid-${req.params.id}`,
-    version: "1.0.0",
+    version: "3.0.0",
     name: cfg.nome || "Brazuca Debrid",
     description: "Brazuca Torrents + Debrid Wrapper",
     logo: cfg.icone || "https://i.imgur.com/KVpfrAk.png",
+
+    // Necessário para o Stremio reconhecer o addon no app
+    catalogs: [
+      {
+        type: "movie",
+        id: "brazuca-placeholder",
+        name: "Brazuca (Configuração)",
+        extra: []
+      },
+      {
+        type: "series",
+        id: "brazuca-placeholder-series",
+        name: "Brazuca Séries (Configuração)",
+        extra: []
+      }
+    ],
+
     types: ["movie", "series"],
+
     resources: [
       {
         name: "stream",
@@ -72,7 +90,7 @@ async function streamHandler(req, res) {
   // Comet (se ativado pelo preset)
   if (cfg.cometa === true) {
     upstreams.push({
-      u: "https://comet.feels.legal/eyJtYXhSZXN1bHRzUGVyUmVzb2x1dGlvbiI6MCwibWF4U2l6ZSI6MCwiY2FjaGVkT25seSI6ZmFsc2UsInNvcnRDYWNoZWRVbmNhY2hlZFRvZ2V0aGVyIjpmYWxzZSwicmVtb3ZlVHJhc2giOnRydWUsInJlc3VsdEZvcm1hdCI6WyJhbGwiXSwiZGVicmlkU2VydmljZXMiOltdLCJlbmFibGVUb3JyZW50Ijp0cnVlLCJkZWR1cGxpY2F0ZVN0cmVhbXMiOnRydWUsImRlYnJpZFN0cmVhbVByb3h5UGFzc3dvcmQiOiIiLCJsYW5ndWFnZXMiOnsicmVxdWlyZWQiOlsicHQiXSwiYWxsb3dlZCI6WyJtdWx0aSIsImVuIiwiamEiLCJrbyJdLCJleGNsdWRlIjpbIm11bHRpIiwiZW4iLCJqYSIsInpoIiwicnUiLCJhciIsImVzIiwiZnIiLCJkZSIsIml0Iiwia28iLCJoaSIsImJuIiwicGEiLCJtciIsImd1IiwidGEiLCJ0ZSIsImtuIiwibWwiLCJ0aCIsInZpIiwiaWQiLCJ0ciIsImhlIiwiZmEiLCJ1ayIsImVsIiwibHQiLCJsdiIsImV0IiwicGwiLCJjcyIsInNrIiwiaHUiLCJybyIsImJnIiwic3IiLCJociIsInNsIiwibmwiLCJkYSIsImZpIiwic3YiLCJubyIsIm1zIiwibGEiXSwicHJlZmVycmVkIjpbXX0sInJlc29sdXRpb25zIjp7InI1NzZwIjpmYWxzZSwicjQ4MHAiOmZhbHNlLCJyMzYwcCI6ZmFsc2UsInIyNDBwIjpmYWxzZX0sIm9wdGlvbnMiOnsicmVtb3ZlX3JhbmtzX3VuZGVyIjotMTAwMDAwMDAwMDAsImFsbG93X2VuZ2xpc2hfaW5fbGFuZ3VhZ2VzIjpmYWxzZSwicmVtb3ZlX3Vua25vd25fbGFuZ3VhZ2VzIjpmYWxzZX19/manifest.json"
+      u: "https://comet.feels.legal/eyJtYXhSZXN1bHRzUGVyUmVzb2x1dGlvbiI6MCwibWF4U2l6ZSI6MCwiY2FjaGVkT25seSI6ZmFsc2UsInNvcnRDYWNoZWRVbmNhY2hlZFRvZ2V0aGVyIjpmYWxzZSwicmVtb3ZlVHJhc2giOnRydWUsInJlc3VsdEZvcm1hdCI6WyJhbGwiXSwiZGVicmlkU2VydmljZXMiOltdLCJlbmFibGVUb3JyZW50Ijp0cnVlLCJkZWR1cGxpY2F0ZVN0cmVhbXMiOnRydWUsImRlYnJpZFN0cmVhbVByb3h5UGFzc3dvcmQiOiIiLCJsYW5ndWFnZXMiOnsicmVxdWlyZWQiOlsicHQiXSwiYWxsb3dlZCI6WyJtdWx0aSIsImVuIiwiamEiLCJrbyJdLCJleGNsdWRlIjpbIm11bHRpIiwiZW4iLCJqYSIsInpoIiwicnUiXSwicHJlZmVycmVkIjpbInB0Il19LCJyZXNvbHV0aW9ucyI6eyJyNTc2cCI6ZmFsc2UsInI0ODBwIjpmYWxzZSwicjM2MHAiOmZhbHNlLCJyMjQwcCI6ZmFsc2V9LCJvcHRpb25zIjp7InJlbW92ZV9yYW5rc191bmRlciI6LTEwMDAwMDAwMDAwLCJhbGxvd19lbmdsaXNoX2luX2xhbmd1YWdlcyI6ZmFsc2UsInJlbW92ZV91bmtub3duX2xhbmd1YWdlcyI6ZmFsc2V9fQ==/manifest.json"
     });
   }
 
@@ -97,7 +115,7 @@ async function streamHandler(req, res) {
       return res.json({ streams: [] });
     }
 
-    await kv.set(cacheKey, data, { ex: 600 });
+    await kv.set(cacheKey, data, { ex: 3600 });
     return res.json(data);
   } catch {
     return res.json({ streams: [] });
