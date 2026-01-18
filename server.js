@@ -100,9 +100,11 @@ async function streamHandler(req, res) {
   }
 
   const stores = [];
+
   if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
   if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
-
+  if (cfg.premiumize) stores.push({ c: "pm", t: cfg.premiumize });
+  if (cfg.debridlink) stores.push({ c: "dl", t: cfg.debridlink });
   const wrapper = { upstreams, stores };
   const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
 
