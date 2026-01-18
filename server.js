@@ -8,7 +8,7 @@ app.use(cors());
 app.use(express.json());
 
 // ===============================
-// CONFIGURAÇÃO DO REDIS (USANDO VARIÁVEIS EXISTENTES)
+// CONFIGURAÇÃO DO REDIS
 // ===============================
 const kv = new Redis({
   url: process.env.KV_REST_API_URL,
@@ -25,7 +25,7 @@ app.post("/gerar", async (req, res) => {
 });
 
 // ===============================
-// MANIFEST DINÂMICO
+// MANIFEST STREAM‑ONLY (SEM CATALOGS)
 // ===============================
 app.get("/:id/manifest.json", async (req, res) => {
   const cfg = await kv.get(`addon:${req.params.id}`);
@@ -38,24 +38,7 @@ app.get("/:id/manifest.json", async (req, res) => {
     description: "Brazuca Torrents + Debrid Wrapper",
     logo: cfg.icone || "https://i.imgur.com/KVpfrAk.png",
 
-    // Necessário para o Stremio reconhecer o addon no app
-    catalogs: [
-      {
-        type: "movie",
-        id: "brazuca-placeholder",
-        name: "Brazuca (Configuração)",
-        extra: []
-      },
-      {
-        type: "series",
-        id: "brazuca-placeholder-series",
-        name: "Brazuca Séries (Configuração)",
-        extra: []
-      }
-    ],
-
     types: ["movie", "series"],
-
     resources: [
       {
         name: "stream",
@@ -67,7 +50,7 @@ app.get("/:id/manifest.json", async (req, res) => {
 });
 
 // ===============================
-// STREAM (com cache de 10 minutos)
+// STREAM (com cache seletivo + logs)
 // ===============================
 async function streamHandler(req, res) {
   const { id, type, imdb } = req.params;
@@ -78,7 +61,12 @@ async function streamHandler(req, res) {
   const cacheKey = `cache:${id}:${type}:${imdb}`;
   const cached = await kv.get(cacheKey);
 
-  if (cached) return res.json(cached);
+  if (cached) {
+    console.log("CACHE HIT →", imdb);
+    return res.json(cached);
+  }
+
+  console.log("CACHE MISS →", imdb);
 
   const upstreams = [];
 
@@ -87,24 +75,34 @@ async function streamHandler(req, res) {
     u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
   });
 
-      // Torrentio
-  upstreams.push({
-    u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
-  });
-
-  // Comet (se ativado pelo preset)
+  // Comet
   if (cfg.cometa === true) {
     upstreams.push({
-      u: "https://comet.feels.legal/eyJtYXhSZXN1bHRzUGVyUmVzb2x1dGlvbiI6MCwibWF4U2l6ZSI6MCwiY2FjaGVkT25seSI6ZmFsc2UsInNvcnRDYWNoZWRVbmNhY2hlZFRvZ2V0aGVyIjpmYWxzZSwicmVtb3ZlVHJhc2giOnRydWUsInJlc3VsdEZvcm1hdCI6WyJhbGwiXSwiZGVicmlkU2VydmljZXMiOltdLCJlbmFibGVUb3JyZW50Ijp0cnVlLCJkZWR1cGxpY2F0ZVN0cmVhbXMiOnRydWUsImRlYnJpZFN0cmVhbVByb3h5UGFzc3dvcmQiOiIiLCJsYW5ndWFnZXMiOnsicmVxdWlyZWQiOlsicHQiXSwiYWxsb3dlZCI6WyJtdWx0aSIsImVuIiwiamEiLCJrbyJdLCJleGNsdWRlIjpbIm11bHRpIiwiZW4iLCJqYSIsInpoIiwicnUiLCJhciIsImVzIiwiZnIiLCJkZSIsIml0Iiwia28iLCJoaSIsImJuIiwicGEiLCJtciIsImd1IiwidGEiLCJ0ZSIsImtuIiwibWwiLCJ0aCIsInZpIiwiaWQiLCJ0ciIsImhlIiwiZmEiLCJ1ayIsImVsIiwibHQiLCJsdiIsImV0IiwicGwiLCJjcyIsInNrIiwiaHUiLCJybyIsImJnIiwic3IiLCJociIsInNsIiwibmwiLCJkYSIsImZpIiwic3YiLCJubyIsIm1zIiwibGEiXSwicHJlZmVycmVkIjpbInB0Il19LCJyZXNvbHV0aW9ucyI6eyJyNTc2cCI6ZmFsc2UsInI0ODBwIjpmYWxzZSwicjM2MHAiOmZhbHNlLCJyMjQwcCI6ZmFsc2V9LCJvcHRpb25zIjp7InJlbW92ZV9yYW5rc191bmRlciI6LTEwMDAwMDAwMDAwLCJhbGxvd19lbmdsaXNoX2luX2xhbmd1YWdlcyI6ZmFsc2UsInJlbW92ZV91bmtub3duX2xhbmd1YWdlcyI6ZmFsc2V9fQ==/manifest.json"
+      u: "https://comet.feels.legal/eyJtYXhSZXN1bHRzUGVyUmVzb2x1dGlvbiI6MCwibWF4U2l6ZSI6MCwiY2FjaGVkT25seSI6ZmFsc2UsInNvcnRDYWNoZWRVbmNhY2hlZFRvZ2V0aGVyIjpmYWxzZSwicmVtb3ZlVHJhc2giOnRydWUsInJlc3VsdEZvcm1hdCI6WyJhbGwiXSwiZGVicmlkU2VydmljZXMiOltdLCJlbmFibGVUb3JyZW50Ijp0cnVlLCJkZWR1cGxpY2F0ZVN0cmVhbXMiOnRydWUsImRlYnJpZFN0cmVhbVByb3h5UGFzc3dvcmQiOiIiLCJsYW5ndWFnZXMiOnsicmVxdWlyZWQiOlsicHQiXSwiYWxsb3dlZCI6WyJtdWx0aSIsImVuIiwiamEiLCJrbyJdLCJleGNsdWRlIjpbIm11bHRpIiwiZW4iLCJqYSIsInpoIiwicnUiXSwicHJlZmVycmVkIjpbInB0Il19LCJyZXNvbHV0aW9ucyI6eyJyNTc2cCI6ZmFsc2UsInI0ODBwIjpmYWxzZSwicjM2MHAiOmZhbHNlLCJyMjQwcCI6ZmFsc2V9LCJvcHRpb25zIjp7InJlbW92ZV9yYW5rc191bmRlciI6LTEwMDAwMDAwMDAwLCJhbGxvd19lbmdsaXNoX2luX2xhbmd1YWdlcyI6ZmFsc2UsInJlbW92ZV91bmtub3duX2xhbmd1YWdlcyI6ZmFsc2V9fQ==/manifest.json"
     });
   }
 
-  const stores = [];
+  // Torrentio
+  if (cfg.torrentio === true) {
+    upstreams.push({
+      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
+    });
+  }
 
+  // Serviços de debrid
+  const stores = [];
   if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
   if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
   if (cfg.premiumize) stores.push({ c: "pm", t: cfg.premiumize });
   if (cfg.debridlink) stores.push({ c: "dl", t: cfg.debridlink });
+
+  // LOGS
+  console.log("UPSTREAMS ATIVOS:");
+  upstreams.forEach(u => console.log("→", u.u));
+
+  console.log("DEBRID CONFIGURADOS:");
+  stores.forEach(s => console.log("→", s.c));
+
   const wrapper = { upstreams, stores };
   const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
 
@@ -112,19 +110,27 @@ async function streamHandler(req, res) {
     `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
     `/stream/${type}/${imdb}.json`;
 
+  console.log("URL FINAL →", stremthruUrl);
+
   try {
     const { data } = await axios.get(stremthruUrl, {
       timeout: 20000,
       headers: { "User-Agent": "DebridBR/1.0" }
     });
 
-    if (!data || !Array.isArray(data.streams)) {
-      return res.json({ streams: [] });
+    console.log("STREAMS RECEBIDOS:", data.streams?.length || 0);
+
+    // Cache seletivo
+    if (data.streams && data.streams.length > 0) {
+      await kv.set(cacheKey, data, { ex: 600 });
+      console.log("CACHE SALVO ✔");
+    } else {
+      console.log("CACHE NÃO SALVO (streams vazios)");
     }
 
-    await kv.set(cacheKey, data, { ex: 3600 });
     return res.json(data);
-  } catch {
+  } catch (err) {
+    console.log("ERRO NO STREMTHRU:", err.message);
     return res.json({ streams: [] });
   }
 }
@@ -133,15 +139,44 @@ app.get("/:id/stream/:type/:imdb.json", streamHandler);
 app.get("/:id/stream/:type/:imdb", streamHandler);
 
 // ===============================
-// DEBUG DO REDIS
+// ROTA DE DEBUG
 // ===============================
-app.get("/debug/:key", async (req, res) => {
-  try {
-    const value = await kv.get(req.params.key);
-    res.json({ value });
-  } catch (e) {
-    res.status(500).json({ error: "Redis não acessível", details: e.message });
+app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
+  const { id, type, imdb } = req.params;
+  const cfg = await kv.get(`addon:${id}`);
+  if (!cfg) return res.json({ error: "Configuração não encontrada" });
+
+  const upstreams = [];
+
+  upstreams.push({ u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" });
+
+  if (cfg.cometa === true) {
+    upstreams.push({ u: "https://comet.feels.legal/..." });
   }
+
+  if (cfg.torrentio === true) {
+    upstreams.push({
+      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
+    });
+  }
+
+  const stores = [];
+  if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
+  if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
+  if (cfg.premiumize) stores.push({ c: "pm", t: cfg.premiumize });
+  if (cfg.debridlink) stores.push({ c: "dl", t: cfg.debridlink });
+
+  const wrapper = { upstreams, stores };
+  const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
+
+  const stremthruUrl =
+    `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
+    `/stream/${type}/${imdb}.json`;
+
+  res.json({
+    wrapper,
+    stremthruUrl
+  });
 });
 
 // ===============================
