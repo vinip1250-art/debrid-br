@@ -25,7 +25,7 @@ app.post("/gerar", async (req, res) => {
 });
 
 // ===============================
-// MANIFEST STREAM‑ONLY (SEM CATALOGS)
+// MANIFEST STREAM‑ONLY + CATÁLOGO INVISÍVEL
 // ===============================
 app.get("/:id/manifest.json", async (req, res) => {
   const cfg = await kv.get(`addon:${req.params.id}`);
@@ -39,14 +39,47 @@ app.get("/:id/manifest.json", async (req, res) => {
     logo: cfg.icone || "https://i.imgur.com/KVpfrAk.png",
 
     types: ["movie", "series"],
+
     resources: [
       {
         name: "stream",
         types: ["movie", "series"],
         idPrefixes: ["tt"]
+      },
+      {
+        name: "catalog",
+        type: "movie",
+        id: "hidden",
+        extraSupported: []
+      },
+      {
+        name: "catalog",
+        type: "series",
+        id: "hidden",
+        extraSupported: []
+      }
+    ],
+
+    catalogs: [
+      {
+        type: "movie",
+        id: "hidden",
+        name: "Hidden Catalog"
+      },
+      {
+        type: "series",
+        id: "hidden",
+        name: "Hidden Catalog"
       }
     ]
   });
+});
+
+// ===============================
+// CATÁLOGO INVISÍVEL (sempre vazio)
+// ===============================
+app.get("/:id/catalog/:type/hidden.json", (req, res) => {
+  res.json({ metas: [] });
 });
 
 // ===============================
