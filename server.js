@@ -78,13 +78,6 @@ async function streamHandler(req, res) {
     });
   }
 
-  // Torrentio (URL personalizada)
-  if (cfg.torrentio === true) {
-    upstreams.push({
-      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
-    });
-  }
-
   // Serviços de debrid
   const stores = [];
   if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
