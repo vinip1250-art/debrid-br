@@ -24,24 +24,6 @@ app.post("/gerar", async (req, res) => {
   res.json({ id });
 });
 
-res.json({
-  id: `brazuca-debrid-${req.params.id}`,
-  version: "3.0.0",
-  name: cfg.nome || "Brazuca Debrid",
-  description: "Brazuca Torrents + Debrid Wrapper",
-  logo: cfg.icone || "https://i.imgur.com/KVpfrAk.png",
-  types: ["movie", "series"],
-  resources: [
-    {
-      name: "stream",
-      types: ["movie", "series"],
-      idPrefixes: ["tt"]
-    }
-  ]
-  // ❌ NÃO incluir "catalogs"
-});
-
-
 // ===============================
 // MANIFEST DINÂMICO
 // ===============================
@@ -55,6 +37,34 @@ app.get("/:id/manifest.json", async (req, res) => {
     name: cfg.nome || "Brazuca Debrid",
     description: "Brazuca Torrents + Debrid Wrapper",
     logo: cfg.icone || "https://i.imgur.com/KVpfrAk.png",
+
+    // Necessário para o Stremio reconhecer o addon no app
+    catalogs: [
+      {
+        type: "movie",
+        id: "brazuca-placeholder",
+        name: "Brazuca (Configuração)",
+        extra: []
+      },
+      {
+        type: "series",
+        id: "brazuca-placeholder-series",
+        name: "Brazuca Séries (Configuração)",
+        extra: []
+      }
+    ],
+
+    types: ["movie", "series"],
+
+    resources: [
+      {
+        name: "stream",
+        types: ["movie", "series"],
+        idPrefixes: ["tt"]
+      }
+    ]
+  });
+});
 
 // ===============================
 // STREAM (com cache de 10 minutos)
