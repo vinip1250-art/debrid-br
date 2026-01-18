@@ -42,24 +42,14 @@
       color: #e5e7eb;
       margin-top: 4px;
     }
-    .preset-row {
+    .check-row {
+      margin-top: 14px;
       display: flex;
-      gap: 10px;
-      margin-top: 12px;
+      gap: 12px;
+      align-items: center;
     }
-    .preset-btn {
-      flex: 1;
-      padding: 8px;
-      border-radius: 8px;
-      border: none;
-      background: #374151;
-      color: white;
-      cursor: pointer;
-      font-size: 0.85rem;
-      transition: 0.2s;
-    }
-    .preset-btn.active {
-      background: #2563eb;
+    .check-row input {
+      transform: scale(1.2);
     }
     button {
       width: 100%;
@@ -93,17 +83,22 @@
   <div class="card">
     <h1>Brazuca Wrapper</h1>
 
-    <!-- PRESETS -->
-    <div class="preset-row">
-      <button id="preset1" class="preset-btn" onclick="presetBrazuca()">Brazuca puro</button>
-      <button id="preset2" class="preset-btn" onclick="presetComet()">Brazuca + Comet</button>
-    </div>
-
     <label>Nome do Addon</label>
     <input type="text" id="nomeAddon" value="Brazuca Debrid" />
 
     <label>Ícone (URL)</label>
     <input type="text" id="iconeUrl" value="https://i.imgur.com/KVpfrAk.png" />
+
+    <!-- CHECKBOXES -->
+    <div class="check-row">
+      <input type="checkbox" id="cometCheck" checked />
+      <label for="cometCheck">Ativar Comet</label>
+    </div>
+
+    <div class="check-row">
+      <input type="checkbox" id="torrentioCheck" checked />
+      <label for="torrentioCheck">Ativar Torrentio</label>
+    </div>
 
     <!-- TORBOX -->
     <label>TorBox API Key</label>
@@ -123,7 +118,7 @@
 
     <label>Debrid‑Link API Key</label>
     <input type="text" id="debridlinkKey" placeholder="Cole sua chave Debrid‑Link">
-    
+
     <!-- GERAR -->
     <button class="blue" onclick="gerarConfiguracao()">Gerar Configuração</button>
 
@@ -136,23 +131,6 @@
 
   <script>
     let ultimoLink = "";
-    let presetSelecionado = "comet";
-
-    function highlightPreset(id) {
-      document.getElementById("preset1").classList.remove("active");
-      document.getElementById("preset2").classList.remove("active");
-      document.getElementById(id).classList.add("active");
-    }
-
-    function presetBrazuca() {
-      presetSelecionado = "brazuca";
-      highlightPreset("preset1");
-    }
-
-    function presetComet() {
-      presetSelecionado = "comet";
-      highlightPreset("preset2");
-    }
 
     async function gerarConfiguracao() {
       const config = {
@@ -160,7 +138,10 @@
         icone: document.getElementById("iconeUrl").value,
         torbox: document.getElementById("torboxKey").value,
         realdebrid: document.getElementById("rdKey").value,
-        cometa: presetSelecionado === "comet"
+        premiumize: document.getElementById("premiumizeKey").value,
+        debridlink: document.getElementById("debridlinkKey").value,
+        cometa: document.getElementById("cometCheck").checked,
+        torrentio: document.getElementById("torrentioCheck").checked
       };
 
       try {
