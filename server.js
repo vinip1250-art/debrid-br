@@ -87,6 +87,11 @@ async function streamHandler(req, res) {
     u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
   });
 
+      // Torrentio
+  upstreams.push({
+    u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
+  });
+
   // Comet (se ativado pelo preset)
   if (cfg.cometa === true) {
     upstreams.push({
@@ -102,7 +107,7 @@ async function streamHandler(req, res) {
   const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
 
   const stremthruUrl =
-    `https://stremthrufortheweebs.midnightignite.me/stremio/wrap/${encoded}` +
+    `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
     `/stream/${type}/${imdb}.json`;
 
   try {
