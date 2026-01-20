@@ -25,7 +25,7 @@ app.post("/gerar", async (req, res) => {
 });
 
 // ===============================
-// MANIFEST STREAM‑ONLY + CATÁLOGO INVISÍVEL
+// MANIFEST STREAM‑ONLY (SEM CATÁLOGO)
 // ===============================
 app.get("/:id/manifest.json", async (req, res) => {
   const cfg = await kv.get(`addon:${req.params.id}`);
@@ -45,41 +45,11 @@ app.get("/:id/manifest.json", async (req, res) => {
         name: "stream",
         types: ["movie", "series"],
         idPrefixes: ["tt"]
-      },
-      {
-        name: "catalog",
-        type: "movie",
-        id: "hidden",
-        extraSupported: []
-      },
-      {
-        name: "catalog",
-        type: "series",
-        id: "hidden",
-        extraSupported: []
       }
     ],
 
-    catalogs: [
-      {
-        type: "movie",
-        id: "hidden",
-        name: "Hidden Catalog"
-      },
-      {
-        type: "series",
-        id: "hidden",
-        name: "Hidden Catalog"
-      }
-    ]
+    catalogs: [] // 👈 CATÁLOGO REMOVIDO
   });
-});
-
-// ===============================
-// CATÁLOGO INVISÍVEL (sempre vazio)
-// ===============================
-app.get("/:id/catalog/:type/hidden.json", (req, res) => {
-  res.json({ metas: [] });
 });
 
 // ===============================
@@ -203,8 +173,8 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
 
   const stremthruUrl =
-    `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
-    `/stream/${type}/${imdb}.json`;
+  `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
+  `/stream/${type}/${imdb}.json`;
 
   res.json({
     wrapper,
