@@ -98,6 +98,7 @@ async function streamHandler(req, res) {
   if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
   if (cfg.premiumize) stores.push({ c: "pm", t: cfg.premiumize });
   if (cfg.debridlink) stores.push({ c: "dl", t: cfg.debridlink });
+  if (cfg.alldebrid) stores.push({ c: "dl", t: cfg.alldebrid });
 
   // LOGS
   console.log("UPSTREAMS ATIVOS:");
@@ -168,6 +169,7 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
   if (cfg.premiumize) stores.push({ c: "pm", t: cfg.premiumize });
   if (cfg.debridlink) stores.push({ c: "dl", t: cfg.debridlink });
+  if (cfg.alldebrid) stores.push({ c: "dl", t: cfg.alldebrid });
 
   const wrapper = { upstreams, stores };
   const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
