@@ -119,6 +119,9 @@
     <label>Debrid‑Link API Key</label>
     <input type="text" id="debridlinkKey" placeholder="Cole sua chave Debrid‑Link">
 
+    <label>ALlDebrid API Key</label>
+    <input type="text" id="alldebridKey" placeholder="Cole sua chave Debrid‑Link">
+
     <!-- GERAR -->
     <button class="blue" onclick="gerarConfiguracao()">Gerar Configuração</button>
 
@@ -140,6 +143,7 @@
         realdebrid: document.getElementById("rdKey").value,
         premiumize: document.getElementById("premiumizeKey").value,
         debridlink: document.getElementById("debridlinkKey").value,
+        alldebrid: document.getElementById("alldebridKey").value,
         cometa: document.getElementById("cometCheck").checked,
         torrentio: document.getElementById("torrentioCheck").checked
       };
