@@ -183,7 +183,7 @@ async function streamHandler(req, res) {
     console.log("[STREAMS]", data.streams?.length || 0);
 
     if (data.streams && data.streams.length > 0) {
-      await kv.set(cacheKey, data, { ex: 600 });
+      await kv.set(cacheKey, data, { ex: 10800 });
       console.log("[CACHE SALVO]");
     }
 
