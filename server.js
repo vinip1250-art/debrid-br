@@ -144,9 +144,6 @@ async function streamHandler(req, res) {
     },
     {
       u: "https://betor-scrap.vercel.app/manifest.json"
-    },
-    {
-      u: "https://stremthru.13377001.xyz/stremio/torz/eyJpbmRleGVycyI6bnVsbCwic3RvcmVzIjpbeyJjIjoicDJwIiwidCI6IiJ9XSwiZmlsdGVyIjoiJ3B0JyBpbiBMYW5ndWFnZXMgfHwgKGxlbihMYW5ndWFnZXMpPT0wIFx1MDAyNlx1MDAyNiBGaWxlLk5hbWUgbWF0Y2hlcyAnKD9pKShkdWJsYWRvfGR1YWwuNS4xfG11bHRpLWF1ZGlvfGJyYXppbGlhbnxwdGJyfHB0LWJyfGJpb21hfGM3NnxhbmRyZWhzYXxnNHJpc3xzaWdtYSknKSJ9/manifest.json"
     }
   ];
 
