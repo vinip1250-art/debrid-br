@@ -105,7 +105,7 @@ async function callWrap(upstreams, stores, type, imdb) {
   console.log("[WRAP URL]", url);
 
   return axios.get(url, {
-    timeout: 20000,
+    timeout: 50000,
     headers: { "User-Agent": "DebridBR/1.0" }
   });
 }
