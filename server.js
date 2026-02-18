@@ -8,29 +8,58 @@ app.use(cors());
 app.use(express.json());
 
 // ===============================
-// REDIS (GLOBAL)
+// REDIS COM FALLBACK
 // ===============================
-const kv = new Redis({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN
-});
+let kv = null;
 
-// ===============================
-// BASE64 CORRETO PARA STREMTHRU
-// ===============================
-function toB64(obj) {
-  // StremThru espera BASE64 PADRÃO
-  // encodeURIComponent garante URL válida
-  return encodeURIComponent(
-    Buffer.from(JSON.stringify(obj)).toString("base64")
-  );
+try {
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    kv = new Redis({
+      url: process.env.KV_REST_API_URL,
+      token: process.env.KV_REST_API_TOKEN
+    });
+    console.log("[REDIS] Inicializado com sucesso");
+  } else {
+    console.warn("[REDIS] Env vars ausentes, cache desativado");
+  }
+} catch (err) {
+  console.error("[REDIS INIT FAIL]", err.message);
+  kv = null;
+}
+
+async function kvGet(key) {
+  if (!kv) return null;
+  try {
+    return await kv.get(key);
+  } catch (err) {
+    console.error(`[REDIS GET FAIL] ${key}: ${err.message}`);
+    return null;
+  }
+}
+
+async function kvSet(key, value, opts) {
+  if (!kv) return;
+  try {
+    await kv.set(key, value, opts);
+    console.log(`[CACHE SALVO] ${key}`);
+  } catch (err) {
+    console.error(`[REDIS SET FAIL] ${key}: ${err.message}`);
+  }
 }
 
 // ===============================
-// LOG HELPERS
+// HELPERS
 // ===============================
+function toB64(obj) {
+  return encodeURIComponent(Buffer.from(JSON.stringify(obj)).toString("base64"));
+}
+
 function ms(start) {
   return `${Date.now() - start}ms`;
+}
+
+function isValidImdb(imdb) {
+  return /^tt\d{7,}$/.test(imdb);
 }
 
 // ===============================
@@ -38,23 +67,23 @@ function ms(start) {
 // ===============================
 app.post("/gerar", async (req, res) => {
   const id = Math.random().toString(36).substring(2, 10);
-  await kv.set(`addon:${id}`, req.body);
-  console.log("[CFG] Gerado ID:", id);
+  await kvSet(`addon:${id}`, req.body);
+  console.log(`[CFG] ID gerado: ${id}`);
   res.json({ id });
 });
 
 // ===============================
-// MANIFEST (STREAM ONLY)
+// MANIFEST
 // ===============================
 app.get("/:id/manifest.json", async (req, res) => {
-  const cfg = await kv.get(`addon:${req.params.id}`);
+  const cfg = await kvGet(`addon:${req.params.id}`);
   if (!cfg) return res.status(404).json({ error: "Manifest não encontrado" });
 
   res.json({
     id: `brazuca-debrid-${req.params.id}`,
     version: "3.4.0",
     name: cfg.nome || "BR Debrid",
-    description: "Brazuca + BeTor + Comet + Torz",
+    description: "Brazuca + BeTor + Comet + Torz (com fallback)",
     logo: cfg.icone || "https://imgur.com/a/hndiKou",
     types: ["movie", "series"],
     resources: [
@@ -69,9 +98,9 @@ app.get("/:id/manifest.json", async (req, res) => {
 });
 
 // ===============================
-// COMET (MANIFEST POR USUÁRIO)
+// COMET MANIFEST
 // ===============================
-function getCometManifest(cfg) {
+function getCometManifest() {
   const cometCfg = {
     maxResultsPerResolution: 0,
     maxSize: 0,
@@ -84,116 +113,151 @@ function getCometManifest(cfg) {
       preferred: ["pt"]
     }
   };
-
-  const encoded = encodeURIComponent(
-    Buffer.from(JSON.stringify(cometCfg)).toString("base64")
-  );
-
-  return `https://comet.feels.legal/${encoded}/manifest.json`;
+  return `https://comet.feels.legal/${toB64(cometCfg)}/manifest.json`;
 }
 
 // ===============================
-// CALL STREMTHRU
+// STREMTHRU (com debrid)
 // ===============================
-async function callWrap(upstreams, stores, type, imdb) {
+async function callStremthru(upstreams, stores, type, imdb) {
   const encoded = toB64({ upstreams, stores });
-
   const url =
     `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
     `/stream/${type}/${imdb}.json`;
 
-  console.log("[WRAP URL]", url);
+  console.log("[STREMTHRU URL]", url);
 
-  return axios.get(url, {
-    timeout: 50000,
+  const { data } = await axios.get(url, {
+    timeout: 7000,
     headers: { "User-Agent": "DebridBR/1.0" }
   });
+  return data;
 }
 
 // ===============================
-// STREAM (ESPERA TOTAL + LOGS)
+// UPSTREAM INDIVIDUAL (fallback)
+// ===============================
+async function getStreamsFromUpstream(manifestUrl, type, imdb) {
+  const baseUrl = manifestUrl.replace(/\/manifest\.json$/, "");
+  const url = `${baseUrl}/stream/${type}/${imdb}.json`;
+  try {
+    const { data } = await axios.get(url, {
+      timeout: 3000,
+      headers: { "User-Agent": "DebridBR/1.0" }
+    });
+    const streams = data.streams || [];
+    console.log(`[UPSTREAM OK] ${manifestUrl} -> ${streams.length} streams`);
+    return streams;
+  } catch (err) {
+    console.log(`[UPSTREAM FAIL] ${manifestUrl}: ${err.message}`);
+    return [];
+  }
+}
+
+// ===============================
+// STREAM HANDLER
 // ===============================
 async function streamHandler(req, res) {
   const start = Date.now();
-  const { id, type, imdb } = req.params;
+  const { id: addonId, type, imdb } = req.params;
 
-  console.log("\n===============================");
-  console.log("🎬 STREAM REQUEST:", imdb);
+  if (!isValidImdb(imdb)) {
+    console.log(`[INVALID] IMDb inválido: ${imdb}`);
+    return res.json({ streams: [] });
+  }
 
-  const cfg = await kv.get(`addon:${id}`);
+  console.log(`\n🎬 STREAM REQUEST: ${imdb} (${type})`);
+
+  const cfg = await kvGet(`addon:${addonId}`);
   if (!cfg) {
     console.log("[CFG] Não encontrada");
     return res.json({ streams: [] });
   }
 
-  // REDIS GLOBAL
+  // Cache
   const cacheKey = `cache:${type}:${imdb}`;
-  const cached = await kv.get(cacheKey);
+  const cached = await kvGet(cacheKey);
   if (cached) {
-    console.log("[CACHE HIT]", imdb);
-    console.log("[TOTAL]", ms(start));
+    console.log(`[CACHE HIT] ${imdb} (${ms(start)})`);
     return res.json(cached);
   }
 
-  console.log("[CACHE MISS]", imdb);
+  console.log(`[CACHE MISS] ${imdb}`);
 
-  // PRIORIDADE FIXA
+  // Upstreams
   const upstreams = [
-    {
-      u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
-    },
-    {
-      u: "https://betor-scrap.vercel.app/manifest.json"
-    }
+    { u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" },
+    { u: "https://betor-scrap.vercel.app/manifest.json" }
   ];
 
   if (cfg.cometa === true) {
-    const cometUrl = getCometManifest(cfg);
+    const cometUrl = getCometManifest();
     upstreams.push({ u: cometUrl });
-    console.log("[UPSTREAM] Comet:", cometUrl);
+    console.log("[UPSTREAM] Comet adicionado");
   }
 
   if (cfg.torrentio === true) {
-    const torUrl =
-      "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json";
-    upstreams.push({ u: torUrl });
-    console.log("[UPSTREAM] Torrentio:", torUrl);
+    upstreams.push({
+      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
+    });
+    console.log("[UPSTREAM] Torrentio adicionado");
   }
 
-  console.log("[UPSTREAMS]");
-  upstreams.forEach((u, i) => console.log(` ${i + 1}.`, u.u));
+  console.log("[UPSTREAMS]", upstreams.map((u, i) => `${i + 1}. ${u.u}`).join(" | "));
 
   const stores = [];
   if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
   if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
 
-  console.log(
-    "[DEBRIDS]",
-    stores.length ? stores.map(s => s.c).join(", ") : "nenhum"
-  );
+  console.log("[DEBRIDS]", stores.length ? stores.map(s => s.c).join(", ") : "nenhum");
 
+  let data = { streams: [] };
+
+  // Tenta stremthru primeiro
   try {
-    const tWrap = Date.now();
-    const { data } = await callWrap(upstreams, stores, type, imdb);
+    console.log("[STREMTHRU] Tentando...");
+    data = await callStremthru(upstreams, stores, type, imdb);
 
-    console.log("[WRAP OK]", ms(tWrap));
-    console.log("[STREAMS]", data.streams?.length || 0);
-
-    if (data.streams && data.streams.length > 0) {
-      await kv.set(cacheKey, data, { ex: 10800 });
-      console.log("[CACHE SALVO]");
+    if (!data.streams || data.streams.length === 0) {
+      throw new Error("Sem streams retornados");
     }
 
-    console.log("[TOTAL]", ms(start));
-    return res.json(data);
+    console.log(`[STREMTHRU OK] ${data.streams.length} streams (${ms(start)})`);
   } catch (err) {
-    console.log("[WRAP ERROR]");
-    console.log("STATUS:", err.response?.status);
-    console.log("DATA:", err.response?.data);
-    console.log("MSG:", err.message);
-    console.log("[TOTAL]", ms(start));
-    return res.json({ streams: [] });
+    console.log(`[STREMTHRU FAIL] ${err.message} (${ms(start)})`);
+    console.log("[FALLBACK] Buscando upstreams individualmente...");
+
+    // Fallback paralelo nos upstreams públicos
+    const promises = upstreams.map(up =>
+      getStreamsFromUpstream(up.u, type, imdb)
+    );
+
+    const results = await Promise.allSettled(promises);
+
+    const allStreams = results
+      .filter(r => r.status === "fulfilled")
+      .flatMap(r => r.value)
+      .filter(Boolean);
+
+    // Deduplicação simples por título + resolução + tamanho
+    const seen = new Set();
+    data.streams = allStreams.filter(stream => {
+      const key = `${stream.title || ""}|${stream.resolution || ""}|${stream.size || ""}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    console.log(`[FALLBACK OK] ${data.streams.length} streams únicos (${ms(start)})`);
   }
+
+  // Salva no cache se tem resultado (TTL 30min = 1800s)
+  if (data.streams && data.streams.length > 0) {
+    await kvSet(cacheKey, data, { ex: 1800 });
+  }
+
+  console.log(`[TOTAL] ${ms(start)}`);
+  return res.json(data);
 }
 
 app.get("/:id/stream/:type/:imdb.json", streamHandler);
