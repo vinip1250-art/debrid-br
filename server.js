@@ -65,7 +65,7 @@ function isValidImdb(imdb) {
 function dedup(streams) {
   const seen = new Set();
   return streams.filter(s => {
-    const key = `${s.infoHash || ""}|${s.title || ""}|${s.url || ""}`;
+    const key = `${s.infoHash || s.title || ''}|${s.size || ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -91,9 +91,9 @@ app.get("/:id/manifest.json", async (req, res) => {
 
   res.json({
     id: `brazuca-debrid-${req.params.id}`,
-    version: "3.5.0",
+    version: "3.6.0",
     name: cfg.nome || "BR Debrid",
-    description: "Brazuca + BeTor + Comet + Torz via StremThru",
+    description: "Brazuca + BeTor + Comet + Torrentio (Torz opcional)",
     logo: cfg.icone || "https://imgur.com/a/hndiKou",
     types: ["movie", "series"],
     resources: [
@@ -127,140 +127,101 @@ function getCometManifest() {
 }
 
 // ===============================
-// TORZ MANIFEST URL
+// CHAMADA STREMTHRU (com retry)
 // ===============================
-const TORZ_URL = "https://stremthru.13377001.xyz/stremio/torz/manifest.json";
-
-// ===============================
-// CHAMADA STREMTHRU WRAP
-// ===============================
-async function callWrap(upstreams, stores, type, imdb, timeoutMs) {
+async function callWrap(upstreams, stores, type, imdb, maxTimeout = 30000) {
   const encoded = toB64({ upstreams, stores });
-  const url =
-    `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
-    `/stream/${type}/${imdb}.json`;
+  const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
 
-  console.log(`[WRAP] ${upstreams.length} upstreams, timeout ${timeoutMs}ms`);
+  console.log(`[WRAP] ${upstreams.length} upstreams, max ${maxTimeout}ms`);
 
-  const { data } = await axios.get(url, {
-    timeout: timeoutMs,
-    headers: { "User-Agent": "DebridBR/1.0" }
-  });
+  let lastError;
+  let streams = [];
 
-  return data.streams || [];
+  // Retry com timeout progressivo
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const timeout = Math.min(8000 * attempt, maxTimeout);
+    try {
+      const { data } = await axios.get(url, {
+        timeout,
+        headers: { "User-Agent": "DebridBR/1.0" }
+      });
+      streams = data.streams || [];
+      if (streams.length > 0) {
+        console.log(`[WRAP OK] attempt ${attempt}, ${streams.length} streams (${ms(start)})`);
+        return streams;
+      }
+    } catch (err) {
+      lastError = err.message;
+      console.log(`[WRAP FAIL] attempt ${attempt}/${3}: ${err.message}`);
+      if (err.code !== 'ECONNABORTED') break; // Só retry timeout
+    }
+    await new Promise(r => setTimeout(r, 500)); // Pause entre retries
+  }
+
+  console.log(`[WRAP TOTAL FAIL] ${lastError}`);
+  return [];
 }
 
 // ===============================
-// STREAM HANDLER
+// STREAM HANDLER (SIMPLE + ROBUSTO)
 // ===============================
 async function streamHandler(req, res) {
   const start = Date.now();
   const { id: addonId, type, imdb } = req.params;
 
   if (!isValidImdb(imdb)) {
-    console.log(`[INVALID] IMDb inválido: ${imdb}`);
     return res.json({ streams: [] });
   }
 
   console.log(`\n🎬 STREAM REQUEST: ${imdb} (${type})`);
 
-  const cfg = await kvGet(`addon:${addonId}`);
-  if (!cfg) {
-    console.log("[CFG] Não encontrada");
-    return res.json({ streams: [] });
-  }
+  const cfg = await kvGet(`addon:${id}`);
+  if (!cfg) return res.json({ streams: [] });
 
-  // Cache
   const cacheKey = `cache:${type}:${imdb}`;
   const cached = await kvGet(cacheKey);
   if (cached) {
-    console.log(`[CACHE HIT] ${imdb} (${ms(start)})`);
+    console.log(`[CACHE HIT] ${imdb}`);
     return res.json(cached);
   }
 
   console.log(`[CACHE MISS] ${imdb}`);
 
-  // Stores (debrid)
+  // Stores
   const stores = [];
   if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
   if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
 
-  console.log("[DEBRIDS]", stores.length ? stores.map(s => s.c).join(", ") : "nenhum");
-
-  // Upstreams principais (sem Torz)
-  const mainUpstreams = [
+  // Upstreams MAIN (como original)
+  const upstreams = [
     { u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" },
     { u: "https://betor-scrap.vercel.app/manifest.json" }
   ];
 
-  if (cfg.cometa === true) {
-    mainUpstreams.push({ u: getCometManifest() });
-    console.log("[UPSTREAM] Comet adicionado");
+  if (cfg.cometa) upstreams.push({ u: getCometManifest() });
+  if (cfg.torrentio) upstreams.push({ 
+    u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json" 
+  });
+
+  console.log("[UPSTREAMS]", upstreams.length);
+
+  // ÚNICA chamada com retry (30s max)
+  const streams = await callWrap(upstreams, stores, type, imdb, 30000);
+
+  const data = { streams: dedup(streams) };
+
+  if (data.streams.length > 0) {
+    await kvSet(cacheKey, data, { ex: 3600 });
   }
 
-  if (cfg.torrentio === true) {
-    mainUpstreams.push({
-      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
-    });
-    console.log("[UPSTREAM] Torrentio adicionado");
-  }
-
-  // Upstreams Torz (separado)
-  const torzUpstreams = [{ u: TORZ_URL }];
-
-  console.log("[UPSTREAMS MAIN]", mainUpstreams.length);
-  console.log("[UPSTREAMS TORZ]", torzUpstreams.length);
-
-  // Dispara as duas chamadas ao wrap em paralelo:
-  // - Chamada principal: sem Torz, timeout 7s
-  // - Chamada Torz: só Torz, timeout 12s
-  const [mainResult, torzResult] = await Promise.allSettled([
-    callWrap(mainUpstreams, stores, type, imdb, 7000),
-    callWrap(torzUpstreams, stores, type, imdb, 12000)
-  ]);
-
-  const mainStreams = mainResult.status === "fulfilled"
-    ? mainResult.value
-    : [];
-
-  const torzStreams = torzResult.status === "fulfilled"
-    ? torzResult.value
-    : [];
-
-  if (mainResult.status === "rejected") {
-    console.log(`[MAIN FAIL] ${mainResult.reason?.message}`);
-  } else {
-    console.log(`[MAIN OK] ${mainStreams.length} streams`);
-  }
-
-  if (torzResult.status === "rejected") {
-    console.log(`[TORZ FAIL] ${torzResult.reason?.message}`);
-  } else {
-    console.log(`[TORZ OK] ${torzStreams.length} streams`);
-  }
-
-  // Merge: main primeiro (prioridade), Torz depois
-  const merged = dedup([...mainStreams, ...torzStreams]);
-
-  console.log(`[MERGE] ${merged.length} streams únicos (${ms(start)})`);
-
-  const data = { streams: merged };
-
-  // Salva no cache se tem resultado (TTL 1800s = 30min)
-  if (merged.length > 0) {
-    await kvSet(cacheKey, data, { ex: 1800 });
-  }
-
-  console.log(`[TOTAL] ${ms(start)}`);
+  console.log(`[TOTAL] ${data.streams.length} streams (${ms(start)})`);
   return res.json(data);
 }
 
 app.get("/:id/stream/:type/:imdb.json", streamHandler);
 app.get("/:id/stream/:type/:imdb", streamHandler);
 
-// ===============================
-// INDEX
-// ===============================
 app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
