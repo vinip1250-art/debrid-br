@@ -7,7 +7,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// REDIS
 let kv = null;
 try {
   if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
@@ -18,7 +17,7 @@ try {
     console.log("[REDIS] OK");
   }
 } catch (err) {
-  console.error("[REDIS FAIL]", err.message);
+  console.error("[REDIS]", err.message);
 }
 
 async function kvGet(key) {
@@ -26,7 +25,6 @@ async function kvGet(key) {
   try {
     return await kv.get(key);
   } catch (err) {
-    console.error(`[REDIS GET ${key}]`, err.message);
     return null;
   }
 }
@@ -35,9 +33,7 @@ async function kvSet(key, value, opts) {
   if (!kv) return;
   try {
     await kv.set(key, value, opts);
-  } catch (err) {
-    console.error(`[REDIS SET ${key}]`, err.message);
-  }
+  } catch (err) {}
 }
 
 // HELPERS
@@ -63,7 +59,7 @@ function dedup(streams) {
   });
 }
 
-// /gerar
+// GERAR
 app.post("/gerar", async (req, res) => {
   const id = Math.random().toString(36).substring(2, 10);
   await kvSet(`addon:${id}`, req.body);
@@ -71,16 +67,16 @@ app.post("/gerar", async (req, res) => {
   res.json({ id });
 });
 
-// /manifest.json
+// MANIFEST
 app.get("/:id/manifest.json", async (req, res) => {
   const cfg = await kvGet(`addon:${req.params.id}`);
   if (!cfg) return res.status(404).json({ error: "Manifest não encontrado" });
 
   res.json({
     id: `brazuca-debrid-${req.params.id}`,
-    version: "3.6.1",
-    name: cfg.nome || "BR Debrid",
-    description: "Brazuca + BeTor + Comet + Torrentio",
+    version: "3.6.2",
+    name: cfg.nome || "BR Debrid + Torz",
+    description: "Todos addons + Torz PT-BR",
     logo: cfg.icone || "https://imgur.com/a/hndiKou",
     types: ["movie", "series"],
     resources: [{ name: "stream", types: ["movie", "series"], idPrefixes: ["tt"] }],
@@ -88,7 +84,7 @@ app.get("/:id/manifest.json", async (req, res) => {
   });
 });
 
-// Comet
+// COMET
 function getCometManifest() {
   const cfg = {
     maxResultsPerResolution: 0,
@@ -102,27 +98,33 @@ function getCometManifest() {
   return `https://comet.feels.legal/${toB64(cfg)}/manifest.json`;
 }
 
-// STREMTHRU com retry
+// TORZ PT-BR
+function getTorzManifest() {
+  const torzCfg = {
+    stores: [{ c: "p2p", t: "" }],
+    filter: "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|sf|bioma|c76|c0ral|sigma|andrehsa|riper|sigla|eck)'"
+  };
+  return `https://stremthru.13377001.xyz/stremio/torz/${toB64(torzCfg)}/manifest.json`;
+}
+
+// WRAP com retry
 async function callWrap(upstreams, stores, type, imdb) {
   const encoded = toB64({ upstreams, stores });
   const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
 
-  console.log(`[WRAP] ${upstreams.length}us`);
+  console.log(`[WRAP] ${upstreams.length}`);
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     const timeout = 8000 * attempt;
     try {
-      const { data } = await axios.get(url, {
-        timeout,
-        headers: { "User-Agent": "DebridBR/1.0" }
-      });
+      const { data } = await axios.get(url, { timeout, headers: { "User-Agent": "DebridBR/1.0" } });
       const streams = data.streams || [];
       if (streams.length > 0) {
-        console.log(`[WRAP OK] ${streams.length} (${ms(Date.now() - timeout)})`);
+        console.log(`[OK] ${streams.length}`);
         return streams;
       }
     } catch (err) {
-      console.log(`[WRAP ${attempt}] ${err.message}`);
+      console.log(`[${attempt}] ${err.message}`);
       if (err.code !== 'ECONNABORTED') break;
       await new Promise(r => setTimeout(r, 500));
     }
@@ -137,7 +139,7 @@ async function streamHandler(req, res) {
 
   if (!isValidImdb(imdb)) return res.json({ streams: [] });
 
-  console.log(`\n🎬 ${imdb}`);
+  console.log(`\\n🎬 ${imdb}`);
 
   const cfg = await kvGet(`addon:${addonId}`);
   if (!cfg) return res.json({ streams: [] });
@@ -145,11 +147,11 @@ async function streamHandler(req, res) {
   const cacheKey = `cache:${type}:${imdb}`;
   const cached = await kvGet(cacheKey);
   if (cached) {
-    console.log(`[CACHE HIT]`);
+    console.log(`[HIT]`);
     return res.json(cached);
   }
 
-  console.log(`[CACHE MISS]`);
+  console.log(`[MISS]`);
 
   const stores = [];
   if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
@@ -164,6 +166,7 @@ async function streamHandler(req, res) {
   if (cfg.torrentio) upstreams.push({ 
     u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json" 
   });
+  if (cfg.torz) upstreams.push({ u: getTorzManifest() });
 
   const streams = await callWrap(upstreams, stores, type, imdb);
   const data = { streams: dedup(streams) };
