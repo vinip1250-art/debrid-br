@@ -45,23 +45,25 @@ function ms(start) {
   return `${Date.now() - start}ms`;
 }
 
-// antes: só IMDb
-function isValidImdb(imdb) {
-  return /^ttd{7,}$/.test(imdb);
+// IMDb: tt1234567  ou  tt1234567:1:2 (série/episódio)[web:41][web:38]
+function isImdbLike(id) {
+  return /^ttd{7,}(:d+:d+)?$/.test(id);
 }
 
-// novo: aceita IMDb e Kitsu (kitsu:ID ou kitsu:ID:EP)
+// Kitsu: kitsu:123  ou  kitsu:123:1[web:23]
+function isKitsuLike(id) {
+  return /^kitsu:d+(?::d+)?$/.test(id);
+}
+
+// valida qualquer ID que o Stremio+Torrentio vão usar com você[web:24][web:34]
 function isValidVideoId(id) {
-  if (isValidImdb(id)) return true;
-  // kitsu:123  ou  kitsu:123:1
-  if (/^kitsu:d+(?::d+)?$/.test(id)) return true;
-  return false;
+  return isImdbLike(id) || isKitsuLike(id);
 }
 
 function dedup(streams) {
   const seen = new Set();
   return streams.filter(s => {
-    const key = `${s.infoHash || s.title || ''}|${s.size || ''}`;
+    const key = `${s.infoHash || s.title || ""}|${s.size || ""}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -87,15 +89,14 @@ app.get("/:id/manifest.json", async (req, res) => {
     name: cfg.nome || "BR Debrid + Torz",
     description: "Todos addons + Torz PT-BR",
     logo: cfg.icone || "https://imgur.com/a/hndiKou",
-    // AGORA: movie, series e anime
+    // suporta movie / series / anime[web:4]
     types: ["movie", "series", "anime"],
     resources: [
       {
         name: "stream",
-        // também suporta anime como tipo de conteúdo
         types: ["movie", "series", "anime"],
-        // aceita tanto IMDb (tt...) quanto Kitsu (kitsu:...)
-        idPrefixes: ["tt", "kitsu"]
+        // recebe IDs começando com tt (IMDb) e kitsu: (Kitsu)[web:7][web:23]
+        idPrefixes: ["tt", "kitsu:"]
       }
     ],
     catalogs: []
@@ -131,7 +132,7 @@ async function callWrap(upstreams, stores, type, videoId) {
   const encoded = toB64({ upstreams, stores });
   const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${videoId}.json`;
 
-  console.log(`[WRAP] ${upstreams.length}`);
+  console.log(`[WRAP] ${upstreams.length} -> ${type} / ${videoId}`);
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     const timeout = 8000 * attempt;
@@ -146,7 +147,7 @@ async function callWrap(upstreams, stores, type, videoId) {
         return streams;
       }
     } catch (err) {
-      console.log(`[${attempt}] ${err.message}`);
+      console.log(`[WRAP ERR ${attempt}]`, err.code || err.message);
       if (err.code !== "ECONNABORTED") break;
       await new Promise(r => setTimeout(r, 500));
     }
@@ -159,8 +160,8 @@ async function streamHandler(req, res) {
   const start = Date.now();
   const { id: addonId, type, imdb: videoId } = req.params;
 
-  // agora aceita IMDb (tt...) e Kitsu (kitsu:...)
   if (!isValidVideoId(videoId)) {
+    console.log("[INVALID ID]", type, videoId);
     return res.json({ streams: [] });
   }
 
@@ -168,16 +169,19 @@ async function streamHandler(req, res) {
 🎬 ${type} -> ${videoId}`);
 
   const cfg = await kvGet(`addon:${addonId}`);
-  if (!cfg) return res.json({ streams: [] });
+  if (!cfg) {
+    console.log("[NO CFG]");
+    return res.json({ streams: [] });
+  }
 
   const cacheKey = `cache:${type}:${videoId}`;
   const cached = await kvGet(cacheKey);
   if (cached) {
-    console.log(`[HIT]`);
+    console.log("[HIT]");
     return res.json(cached);
   }
 
-  console.log(`[MISS]`);
+  console.log("[MISS]");
 
   const stores = [];
   if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
@@ -191,7 +195,7 @@ async function streamHandler(req, res) {
   if (cfg.cometa) upstreams.push({ u: getCometManifest() });
   if (cfg.torrentio)
     upstreams.push({
-      // Torrentio já suporta types ["movie","series","anime"] e idPrefixes ["tt","kitsu"]
+      // Torrentio já publica types ["movie","series","anime"] e suporta kitsu[web:24][web:34]
       u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
     });
   if (cfg.torz) upstreams.push({ u: getTorzManifest() });
