@@ -33,10 +33,10 @@ app.get("/:id/manifest.json", async (req, res) => {
 
   res.json({
     id: `brazuca-debrid-${req.params.id}`,
-    version: "3.0.0",
-    name: cfg.nome || "Brazuca Debrid",
-    description: "Brazuca Torrents + Debrid Wrapper",
-    logo: cfg.icone || "https://i.imgur.com/KVpfrAk.png",
+    version: "3.6.0",
+    name: cfg.nome || "BRDebrid",
+    description: "Brazuca + Betor + Torrentio + Comet",
+    logo: cfg.icone || "https://brazuca-debrid.vercel.app/logo.png",
 
     types: ["movie", "series"],
 
