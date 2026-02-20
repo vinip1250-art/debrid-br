@@ -45,25 +45,16 @@ function ms(start) {
   return `${Date.now() - start}ms`;
 }
 
-// IMDb: tt1234567  ou  tt1234567:1:2 (série/episódio)[web:41][web:38]
-function isImdbLike(id) {
-  return /^ttd{7,}(:d+:d+)?$/.test(id);
-}
-
-// Kitsu: kitsu:123  ou  kitsu:123:1[web:23]
-function isKitsuLike(id) {
-  return /^kitsu:d+(?::d+)?$/.test(id);
-}
-
-// valida qualquer ID que o Stremio+Torrentio vão usar com você[web:24][web:34]
+// DEBUG: aceita QUALQUER ID para ver o que chega
 function isValidVideoId(id) {
-  return isImdbLike(id) || isKitsuLike(id);
+  console.log("[DEBUG ID]", id, "-> VALID");
+  return true;
 }
 
 function dedup(streams) {
   const seen = new Set();
   return streams.filter(s => {
-    const key = `${s.infoHash || s.title || ""}|${s.size || ""}`;
+    const key = `${s.infoHash || s.title || ''}|${s.size || ''}`;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
@@ -89,14 +80,12 @@ app.get("/:id/manifest.json", async (req, res) => {
     name: cfg.nome || "BR Debrid + Torz",
     description: "Todos addons + Torz PT-BR",
     logo: cfg.icone || "https://imgur.com/a/hndiKou",
-    // suporta movie / series / anime[web:4]
     types: ["movie", "series", "anime"],
     resources: [
       {
         name: "stream",
         types: ["movie", "series", "anime"],
-        // recebe IDs começando com tt (IMDb) e kitsu: (Kitsu)[web:7][web:23]
-        idPrefixes: ["tt", "kitsu:"]
+        idPrefixes: ["tt", "kitsu"]
       }
     ],
     catalogs: []
@@ -121,37 +110,49 @@ function getCometManifest() {
 function getTorzManifest() {
   const torzCfg = {
     stores: [{ c: "p2p", t: "" }],
-    filter:
-      "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|sf|bioma|c76|c0ral|sigma|andrehsa|riper|sigla|eck)'"
+    filter: "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|sf|bioma|c76|c0ral|sigma|andrehsa|riper|sigla|eck)'"
   };
   return `https://stremthru.13377001.xyz/stremio/torz/${toB64(torzCfg)}/manifest.json`;
 }
 
-// WRAP com retry
+// WRAP com debug completo
 async function callWrap(upstreams, stores, type, videoId) {
   const encoded = toB64({ upstreams, stores });
   const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${videoId}.json`;
 
-  console.log(`[WRAP] ${upstreams.length} -> ${type} / ${videoId}`);
+  console.log(`[WRAP URL] ${url}`);
+  console.log(`[WRAP upstreams]`, JSON.stringify(upstreams));
+  console.log(`[WRAP stores]`, JSON.stringify(stores));
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     const timeout = 8000 * attempt;
     try {
-      const { data } = await axios.get(url, {
+      const response = await axios.get(url, {
         timeout,
         headers: { "User-Agent": "DebridBR/1.0" }
       });
+      console.log(`[WRAP STATUS] ${response.status}`);
+      
+      const data = response.data;
       const streams = data.streams || [];
+      console.log(`[WRAP DATA] streams=${streams.length}`);
+      
       if (streams.length > 0) {
-        console.log(`[OK] ${streams.length}`);
+        console.log(`[OK] ${streams.length} streams encontrados`);
         return streams;
+      } else {
+        console.log("[WRAP EMPTY] Sem streams no response");
       }
     } catch (err) {
       console.log(`[WRAP ERR ${attempt}]`, err.code || err.message);
-      if (err.code !== "ECONNABORTED") break;
+      if (err.response) {
+        console.log(`[WRAP ERR RESPONSE]`, err.response.status, err.response.statusText);
+      }
+      if (err.code !== 'ECONNABORTED') break;
       await new Promise(r => setTimeout(r, 500));
     }
   }
+  console.log("[WRAP FAIL] Todas tentativas falharam");
   return [];
 }
 
@@ -160,13 +161,8 @@ async function streamHandler(req, res) {
   const start = Date.now();
   const { id: addonId, type, imdb: videoId } = req.params;
 
-  if (!isValidVideoId(videoId)) {
-    console.log("[INVALID ID]", type, videoId);
-    return res.json({ streams: [] });
-  }
-
   console.log(`
-🎬 ${type} -> ${videoId}`);
+🔍 CHAMADA: addon=${addonId} type=${type} videoId=${videoId}`);
 
   const cfg = await kvGet(`addon:${addonId}`);
   if (!cfg) {
@@ -195,7 +191,6 @@ async function streamHandler(req, res) {
   if (cfg.cometa) upstreams.push({ u: getCometManifest() });
   if (cfg.torrentio)
     upstreams.push({
-      // Torrentio já publica types ["movie","series","anime"] e suporta kitsu[web:24][web:34]
       u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
     });
   if (cfg.torz) upstreams.push({ u: getTorzManifest() });
@@ -207,7 +202,7 @@ async function streamHandler(req, res) {
     await kvSet(cacheKey, data, { ex: 3600 });
   }
 
-  console.log(`[${data.streams.length}] ${ms(start)}`);
+  console.log(`[FINAL] ${data.streams.length} streams em ${ms(start)}`);
   res.json(data);
 }
 
