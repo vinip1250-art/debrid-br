@@ -16,11 +16,62 @@ const kv = new Redis({
 });
 
 // ===============================
+// HELPERS
+// ===============================
+
+/**
+ * Gera a URL do manifest do Comet de forma dinâmica,
+ * baseada nas configurações do usuário (debrid, idiomas, etc).
+ */
+function getCometManifest(cfg) {
+  const debridServices = [];
+  if (cfg.realdebrid) debridServices.push({ id: "realdebrid", apiKey: cfg.realdebrid });
+  if (cfg.torbox)     debridServices.push({ id: "torbox",     apiKey: cfg.torbox });
+  if (cfg.premiumize) debridServices.push({ id: "premiumize", apiKey: cfg.premiumize });
+  if (cfg.debridlink) debridServices.push({ id: "debridlink", apiKey: cfg.debridlink });
+  if (cfg.alldebrid)  debridServices.push({ id: "alldebrid",  apiKey: cfg.alldebrid });
+
+  const cometCfg = {
+    maxResultsPerResolution: 0,
+    maxSize: 0,
+    cachedOnly: false,
+    sortCachedUncachedTogether: false,
+    removeTrash: true,
+    resultFormat: ["all"],
+    debridServices,
+    enableTorrent: true,
+    deduplicateStreams: true,
+    debridStreamProxyPassword: "",
+    languages: {
+      required: ["pt"],
+      allowed: ["multi", "en", "ja", "zh", "ko"],
+      exclude: [
+        "multi","en","ja","zh","ru","ar","es","fr","de","it","ko","hi",
+        "bn","pa","mr","gu","ta","te","kn","ml","th","vi","id","tr","he",
+        "fa","uk","el","lt","lv","et","pl","cs","sk","hu","ro","bg","sr",
+        "hr","sl","nl","da","fi","sv","no","ms","la"
+      ],
+      preferred: ["pt"]
+    },
+    resolutions: { r576p: false, r480p: false, r360p: false, r240p: false },
+    options: {
+      remove_ranks_under: -100000000000,
+      allow_english_in_languages: false,
+      remove_unknown_languages: false
+    }
+  };
+
+  const encoded = Buffer.from(JSON.stringify(cometCfg)).toString("base64");
+  return `https://comet.feels.legal/${encoded}/manifest.json`;
+}
+
+// ===============================
 // ROTA PARA GERAR CONFIGURAÇÃO
 // ===============================
 app.post("/gerar", async (req, res) => {
   const id = Math.random().toString(36).substring(2, 10);
   await kv.set(`addon:${id}`, req.body);
+  console.log("🧩 CFG criada:", id, req.body);
   res.json({ id });
 });
 
@@ -50,7 +101,12 @@ app.get("/:id/manifest.json", async (req, res) => {
       }
     ],
 
-    catalogs: []
+    catalogs: [],
+
+    behaviorHints: {
+      configurable: true,
+      configurationRequired: false
+    }
   });
 });
 
@@ -88,17 +144,17 @@ async function streamHandler(req, res) {
     });
   }
 
-  // ✅ Comet — suporta filmes, séries e animes
+  // ✅ Comet — manifest gerado dinamicamente com debrid do usuário
   if (cfg.cometa === true) {
-    upstreams.push({
-      u: "https://comet.feels.legal/eyJtYXhSZXN1bHRzUGVyUmVzb2x1dGlvbiI6MCwibWF4U2l6ZSI6MCwiY2FjaGVkT25seSI6ZmFsc2UsInNvcnRDYWNoZWRVbmNhY2hlZFRvZ2V0aGVyIjpmYWxzZSwicmVtb3ZlVHJhc2giOnRydWUsInJlc3VsdEZvcm1hdCI6WyJhbGwiXSwiZGVicmlkU2VydmljZXMiOltdLCJlbmFibGVUb3JyZW50Ijp0cnVlLCJkZWR1cGxpY2F0ZVN0cmVhbXMiOnRydWUsImRlYnJpZFN0cmVhbVByb3h5UGFzc3dvcmQiOiIiLCJsYW5ndWFnZXMiOnsicmVxdWlyZWQiOlsicHQiXSwiYWxsb3dlZCI6WyJtdWx0aSIsImVuIiwiamEiLCJ6aCIsImtvIl0sImV4Y2x1ZGUiOlsibXVsdGkiLCJlbiIsImphIiwiemgiLCJydSIsImFyIiwiZXMiLCJmciIsImRlIiwiaXQiLCJrbyIsImhpIiwiYm4iLCJwYSIsIm1yIiwiZ3UiLCJ0YSIsInRlIiwia24iLCJtbCIsInRoIiwidmkiLCJpZCIsInRyIiwiaGUiLCJmYSIsInVrIiwiZWwiLCJsdCIsImx2IiwiZXQiLCJwbCIsImNzIiwic2siLCJodSIsInJvIiwiYmciLCJzciIsImhyIiwic2wiLCJubCIsImRhIiwiZmkiLCJzdiIsIm5vIiwibXMiLCJsYSJdLCJwcmVmZXJyZWQiOlsicHQiXX0sInJlc29sdXRpb25zIjp7InI1NzZwIjpmYWxzZSwicjQ4MHAiOmZhbHNlLCJyMzYwcCI6ZmFsc2UsInIyNDBwIjpmYWxzZX0sIm9wdGlvbnMiOnsicmVtb3ZlX3JhbmtzX3VuZGVyIjotMTAwMDAwMDAwMDAsImFsbG93X2VuZ2xpc2hfaW5fbGFuZ3VhZ2VzIjpmYWxzZSwicmVtb3ZlX3Vua25vd25fbGFuZ3VhZ2VzIjpmYWxzZX19/manifest.json"
-    });
+    const cometUrl = getCometManifest(cfg);
+    upstreams.push({ u: cometUrl });
+    console.log("☄️ Comet URL →", cometUrl);
   }
 
   // Torrentio — suporta kitsu nativamente (nyaasi/tokyotosho/anidex)
   if (cfg.torrentio === true) {
     upstreams.push({
-      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
+      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
     });
   }
 
@@ -128,7 +184,7 @@ async function streamHandler(req, res) {
 
   try {
     const { data } = await axios.get(stremthruUrl, {
-      timeout: 50000,
+      timeout: 20000,
       headers: { "User-Agent": "DebridBR/1.0" }
     });
 
@@ -170,12 +226,12 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   }
 
   if (cfg.cometa === true) {
-    upstreams.push({ u: "https://comet.feels.legal/..." });
+    upstreams.push({ u: getCometManifest(cfg) });
   }
 
   if (cfg.torrentio === true) {
     upstreams.push({
-      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
+      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
     });
   }
 
@@ -193,7 +249,7 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
     `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
     `/stream/${type}/${imdb}.json`;
 
-  res.json({ isAnime, wrapper, stremthruUrl });
+  res.json({ isAnime, cometUrl: cfg.cometa ? getCometManifest(cfg) : null, wrapper, stremthruUrl });
 });
 
 // ===============================
