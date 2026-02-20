@@ -33,19 +33,18 @@ app.get("/:id/manifest.json", async (req, res) => {
 
   res.json({
     id: `brazuca-debrid-${req.params.id}`,
-    version: "3.8.0",
+    version: "3.9.0",
     name: cfg.nome || "BRDebrid",
     description: "Brazuca + Betor + Torrentio + Comet",
     logo: cfg.icone || "https://brazuca-debrid.vercel.app/logo.png",
 
-    // "anime" aqui serve para catálogos — streams usam "series" ou "movie"
     types: ["movie", "series", "anime"],
 
     resources: [
       {
         name: "stream",
-        // ✅ NÃO existe type "anime" em streams no protocolo Stremio.
-        //    Animes via Kitsu chegam com type "series" + id "kitsu:xxx"
+        // Animes via Kitsu chegam com type "series" + id "kitsu:xxx"
+        // Não existe type "anime" em streams no protocolo Stremio
         types: ["movie", "series"],
         idPrefixes: ["tt", "kitsu"]
       }
@@ -77,34 +76,30 @@ async function streamHandler(req, res) {
   const isAnime = imdb.startsWith("kitsu:");
   const upstreams = [];
 
-  // Brazuca e Betor — apenas IDs IMDB (tt), não suportam kitsu
+  // ✅ Brazuca — suporta filmes, séries e animes
+  upstreams.push({
+    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
+  });
+
+  // Betor — apenas IDs IMDB (tt), não suporta kitsu
   if (!isAnime) {
-    upstreams.push({
-      u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
-    });
     upstreams.push({
       u: "https://betor-scrap.vercel.app/manifest.json"
     });
   }
 
-  // Comet — apenas IDs IMDB
-  if (cfg.cometa === true && !isAnime) {
+  // ✅ Comet — suporta filmes, séries e animes
+  if (cfg.cometa === true) {
     upstreams.push({
       u: "https://comet.feels.legal/eyJtYXhSZXN1bHRzUGVyUmVzb2x1dGlvbiI6MCwibWF4U2l6ZSI6MCwiY2FjaGVkT25seSI6ZmFsc2UsInNvcnRDYWNoZWRVbmNhY2hlZFRvZ2V0aGVyIjpmYWxzZSwicmVtb3ZlVHJhc2giOnRydWUsInJlc3VsdEZvcm1hdCI6WyJhbGwiXSwiZGVicmlkU2VydmljZXMiOltdLCJlbmFibGVUb3JyZW50Ijp0cnVlLCJkZWR1cGxpY2F0ZVN0cmVhbXMiOnRydWUsImRlYnJpZFN0cmVhbVByb3h5UGFzc3dvcmQiOiIiLCJsYW5ndWFnZXMiOnsicmVxdWlyZWQiOlsicHQiXSwiYWxsb3dlZCI6WyJtdWx0aSIsImVuIiwiamEiLCJ6aCIsImtvIl0sImV4Y2x1ZGUiOlsibXVsdGkiLCJlbiIsImphIiwiemgiLCJydSIsImFyIiwiZXMiLCJmciIsImRlIiwiaXQiLCJrbyIsImhpIiwiYm4iLCJwYSIsIm1yIiwiZ3UiLCJ0YSIsInRlIiwia24iLCJtbCIsInRoIiwidmkiLCJpZCIsInRyIiwiaGUiLCJmYSIsInVrIiwiZWwiLCJsdCIsImx2IiwiZXQiLCJwbCIsImNzIiwic2siLCJodSIsInJvIiwiYmciLCJzciIsImhyIiwic2wiLCJubCIsImRhIiwiZmkiLCJzdiIsIm5vIiwibXMiLCJsYSJdLCJwcmVmZXJyZWQiOlsicHQiXX0sInJlc29sdXRpb25zIjp7InI1NzZwIjpmYWxzZSwicjQ4MHAiOmZhbHNlLCJyMzYwcCI6ZmFsc2UsInIyNDBwIjpmYWxzZX0sIm9wdGlvbnMiOnsicmVtb3ZlX3JhbmtzX3VuZGVyIjotMTAwMDAwMDAwMDAsImFsbG93X2VuZ2xpc2hfaW5fbGFuZ3VhZ2VzIjpmYWxzZSwicmVtb3ZlX3Vua25vd25fbGFuZ3VhZ2VzIjpmYWxzZX19/manifest.json"
     });
   }
 
-  // Torrentio — ✅ suporta kitsu nativamente (nyaasi/tokyotosho/anidex)
+  // Torrentio — suporta kitsu nativamente (nyaasi/tokyotosho/anidex)
   if (cfg.torrentio === true) {
     upstreams.push({
       u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
     });
-  }
-
-  // Se for anime mas Torrentio não está ativo, retorna vazio
-  if (isAnime && upstreams.length === 0) {
-    console.log("ANIME SEM TORRENTIO ATIVO — retornando vazio");
-    return res.json({ streams: [] });
   }
 
   // Serviços de debrid
@@ -168,12 +163,13 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   const isAnime = imdb.startsWith("kitsu:");
   const upstreams = [];
 
+  upstreams.push({ u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" });
+
   if (!isAnime) {
-    upstreams.push({ u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" });
     upstreams.push({ u: "https://betor-scrap.vercel.app/manifest.json" });
   }
 
-  if (cfg.cometa === true && !isAnime) {
+  if (cfg.cometa === true) {
     upstreams.push({ u: "https://comet.feels.legal/..." });
   }
 
