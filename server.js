@@ -33,22 +33,24 @@ app.get("/:id/manifest.json", async (req, res) => {
 
   res.json({
     id: `brazuca-debrid-${req.params.id}`,
-    version: "3.6.0",
+    version: "3.7.0",
     name: cfg.nome || "BRDebrid",
     description: "Brazuca + Betor + Torrentio + Comet",
     logo: cfg.icone || "https://brazuca-debrid.vercel.app/logo.png",
 
-    types: ["movie", "series"],
+    // ✅ Anime adicionado
+    types: ["movie", "series", "anime"],
 
     resources: [
       {
         name: "stream",
-        types: ["movie", "series"],
-        idPrefixes: ["tt"]
+        types: ["movie", "series", "anime"],
+        // tt = IMDB (filmes/séries), kitsu = IDs de anime
+        idPrefixes: ["tt", "kitsu"]
       }
     ],
 
-    catalogs: [] // 👈 CATÁLOGO REMOVIDO
+    catalogs: [] // catálogo removido
   });
 });
 
@@ -91,6 +93,7 @@ async function streamHandler(req, res) {
   }
 
   // Torrentio
+  // ✅ Já inclui nyaasi, tokyotosho e anidex — principais fontes de anime
   if (cfg.torrentio === true) {
     upstreams.push({
       u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
@@ -99,11 +102,11 @@ async function streamHandler(req, res) {
 
   // Serviços de debrid
   const stores = [];
-  if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
-  if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
-  if (cfg.premiumize) stores.push({ c: "pm", t: cfg.premiumize });
-  if (cfg.debridlink) stores.push({ c: "dl", t: cfg.debridlink });
-  if (cfg.alldebrid) stores.push({ c: "dl", t: cfg.alldebrid });
+  if (cfg.realdebrid)  stores.push({ c: "rd", t: cfg.realdebrid });
+  if (cfg.torbox)      stores.push({ c: "tb", t: cfg.torbox });
+  if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
+  if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
+  if (cfg.alldebrid)   stores.push({ c: "dl", t: cfg.alldebrid });
 
   // LOGS
   console.log("UPSTREAMS ATIVOS:");
@@ -129,10 +132,10 @@ async function streamHandler(req, res) {
 
     console.log("STREAMS RECEBIDOS:", data.streams?.length || 0);
 
-    // Cache seletivo
+    // Cache seletivo — ✅ 30 minutos (1800 segundos)
     if (data.streams && data.streams.length > 0) {
-      await kv.set(cacheKey, data, { ex: 600 });
-      console.log("CACHE SALVO ✔");
+      await kv.set(cacheKey, data, { ex: 1800 });
+      console.log("CACHE SALVO ✔ (30 min)");
     } else {
       console.log("CACHE NÃO SALVO (streams vazios)");
     }
@@ -170,23 +173,20 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   }
 
   const stores = [];
-  if (cfg.realdebrid) stores.push({ c: "rd", t: cfg.realdebrid });
-  if (cfg.torbox) stores.push({ c: "tb", t: cfg.torbox });
-  if (cfg.premiumize) stores.push({ c: "pm", t: cfg.premiumize });
-  if (cfg.debridlink) stores.push({ c: "dl", t: cfg.debridlink });
-  if (cfg.alldebrid) stores.push({ c: "dl", t: cfg.alldebrid });
+  if (cfg.realdebrid)  stores.push({ c: "rd", t: cfg.realdebrid });
+  if (cfg.torbox)      stores.push({ c: "tb", t: cfg.torbox });
+  if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
+  if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
+  if (cfg.alldebrid)   stores.push({ c: "dl", t: cfg.alldebrid });
 
   const wrapper = { upstreams, stores };
   const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
 
   const stremthruUrl =
-  `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
-  `/stream/${type}/${imdb}.json`;
+    `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
+    `/stream/${type}/${imdb}.json`;
 
-  res.json({
-    wrapper,
-    stremthruUrl
-  });
+  res.json({ wrapper, stremthruUrl });
 });
 
 // ===============================
