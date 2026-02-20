@@ -45,17 +45,10 @@ function ms(start) {
   return `${Date.now() - start}ms`;
 }
 
-// Validação que aceita o que realmente chega no Stremio
-function isImdbLike(id) {
-  return /^ttd{7,}(:d+:d+)?$/.test(id);
-}
-
-function isKitsuLike(id) {
-  return /^kitsu:d+(?::d+)?$/.test(id);
-}
-
+// DEBUG: aceita QUALQUER ID para ver o que chega
 function isValidVideoId(id) {
-  return isImdbLike(id) || isKitsuLike(id);
+  console.log("[DEBUG ID]", id, "-> VALID");
+  return true;
 }
 
 function dedup(streams) {
@@ -76,7 +69,7 @@ app.post("/gerar", async (req, res) => {
   res.json({ id });
 });
 
-// MANIFEST - agora com anime
+// MANIFEST
 app.get("/:id/manifest.json", async (req, res) => {
   const cfg = await kvGet(`addon:${req.params.id}`);
   if (!cfg) return res.status(404).json({ error: "Manifest não encontrado" });
@@ -85,7 +78,7 @@ app.get("/:id/manifest.json", async (req, res) => {
     id: `brazuca-debrid-${req.params.id}`,
     version: "3.6.2",
     name: cfg.nome || "BR Debrid + Torz",
-    description: "Todos addons + Torz PT-BR (FILMES | SÉRIES | ANIME)",
+    description: "Todos addons + Torz PT-BR",
     logo: cfg.icone || "https://imgur.com/a/hndiKou",
     types: ["movie", "series", "anime"],
     resources: [
@@ -122,29 +115,44 @@ function getTorzManifest() {
   return `https://stremthru.13377001.xyz/stremio/torz/${toB64(torzCfg)}/manifest.json`;
 }
 
-// WRAP
+// WRAP com debug completo
 async function callWrap(upstreams, stores, type, videoId) {
   const encoded = toB64({ upstreams, stores });
   const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${videoId}.json`;
 
+  console.log(`[WRAP URL] ${url}`);
+  console.log(`[WRAP upstreams]`, JSON.stringify(upstreams));
+  console.log(`[WRAP stores]`, JSON.stringify(stores));
+
   for (let attempt = 1; attempt <= 3; attempt++) {
     const timeout = 8000 * attempt;
     try {
-      const { data } = await axios.get(url, {
+      const response = await axios.get(url, {
         timeout,
         headers: { "User-Agent": "DebridBR/1.0" }
       });
+      console.log(`[WRAP STATUS] ${response.status}`);
+      
+      const data = response.data;
       const streams = data.streams || [];
+      console.log(`[WRAP DATA] streams=${streams.length}`);
+      
       if (streams.length > 0) {
-        console.log(`[OK] ${streams.length}`);
+        console.log(`[OK] ${streams.length} streams encontrados`);
         return streams;
+      } else {
+        console.log("[WRAP EMPTY] Sem streams no response");
       }
     } catch (err) {
-      console.log(`[${attempt}] ${err.message}`);
+      console.log(`[WRAP ERR ${attempt}]`, err.code || err.message);
+      if (err.response) {
+        console.log(`[WRAP ERR RESPONSE]`, err.response.status, err.response.statusText);
+      }
       if (err.code !== 'ECONNABORTED') break;
       await new Promise(r => setTimeout(r, 500));
     }
   }
+  console.log("[WRAP FAIL] Todas tentativas falharam");
   return [];
 }
 
@@ -153,16 +161,14 @@ async function streamHandler(req, res) {
   const start = Date.now();
   const { id: addonId, type, imdb: videoId } = req.params;
 
-  if (!isValidVideoId(videoId)) {
-    console.log("[BLOCKED]", type, videoId);
-    return res.json({ streams: [] });
-  }
-
   console.log(`
-🎬 ${type} ${videoId}`);
+🔍 CHAMADA: addon=${addonId} type=${type} videoId=${videoId}`);
 
   const cfg = await kvGet(`addon:${addonId}`);
-  if (!cfg) return res.json({ streams: [] });
+  if (!cfg) {
+    console.log("[NO CFG]");
+    return res.json({ streams: [] });
+  }
 
   const cacheKey = `cache:${type}:${videoId}`;
   const cached = await kvGet(cacheKey);
@@ -196,7 +202,7 @@ async function streamHandler(req, res) {
     await kvSet(cacheKey, data, { ex: 3600 });
   }
 
-  console.log(`[${data.streams.length}] ${ms(start)}`);
+  console.log(`[FINAL] ${data.streams.length} streams em ${ms(start)}`);
   res.json(data);
 }
 
