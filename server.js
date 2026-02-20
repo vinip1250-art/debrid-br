@@ -75,7 +75,8 @@ async function streamHandler(req, res) {
 
   // Brazuca Torrents
   upstreams.push({
-    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
+    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json",
+    u: "https://betor-scrap.vercel.app/manifest.json"
   });
 
   // Comet
