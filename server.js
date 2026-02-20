@@ -25,7 +25,7 @@ app.post("/gerar", async (req, res) => {
 });
 
 // ===============================
-// MANIFEST STREAM‑ONLY (SEM CATÁLOGO)
+// MANIFEST
 // ===============================
 app.get("/:id/manifest.json", async (req, res) => {
   const cfg = await kv.get(`addon:${req.params.id}`);
@@ -33,29 +33,30 @@ app.get("/:id/manifest.json", async (req, res) => {
 
   res.json({
     id: `brazuca-debrid-${req.params.id}`,
-    version: "3.7.0",
+    version: "3.8.0",
     name: cfg.nome || "BRDebrid",
     description: "Brazuca + Betor + Torrentio + Comet",
     logo: cfg.icone || "https://brazuca-debrid.vercel.app/logo.png",
 
-    // ✅ Anime adicionado
+    // "anime" aqui serve para catálogos — streams usam "series" ou "movie"
     types: ["movie", "series", "anime"],
 
     resources: [
       {
         name: "stream",
-        types: ["movie", "series", "anime"],
-        // tt = IMDB (filmes/séries), kitsu = IDs de anime
+        // ✅ NÃO existe type "anime" em streams no protocolo Stremio.
+        //    Animes via Kitsu chegam com type "series" + id "kitsu:xxx"
+        types: ["movie", "series"],
         idPrefixes: ["tt", "kitsu"]
       }
     ],
 
-    catalogs: [] // catálogo removido
+    catalogs: []
   });
 });
 
 // ===============================
-// STREAM (com cache seletivo + logs)
+// STREAM (com cache 30 min + logs)
 // ===============================
 async function streamHandler(req, res) {
   const { id, type, imdb } = req.params;
@@ -73,31 +74,37 @@ async function streamHandler(req, res) {
 
   console.log("CACHE MISS →", imdb);
 
+  const isAnime = imdb.startsWith("kitsu:");
   const upstreams = [];
 
-  // Brazuca Torrents
-  upstreams.push({
-    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
-  });
+  // Brazuca e Betor — apenas IDs IMDB (tt), não suportam kitsu
+  if (!isAnime) {
+    upstreams.push({
+      u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
+    });
+    upstreams.push({
+      u: "https://betor-scrap.vercel.app/manifest.json"
+    });
+  }
 
-  // Betor
-  upstreams.push({
-    u: "https://betor-scrap.vercel.app/manifest.json"
-  });
-
-  // Comet
-  if (cfg.cometa === true) {
+  // Comet — apenas IDs IMDB
+  if (cfg.cometa === true && !isAnime) {
     upstreams.push({
       u: "https://comet.feels.legal/eyJtYXhSZXN1bHRzUGVyUmVzb2x1dGlvbiI6MCwibWF4U2l6ZSI6MCwiY2FjaGVkT25seSI6ZmFsc2UsInNvcnRDYWNoZWRVbmNhY2hlZFRvZ2V0aGVyIjpmYWxzZSwicmVtb3ZlVHJhc2giOnRydWUsInJlc3VsdEZvcm1hdCI6WyJhbGwiXSwiZGVicmlkU2VydmljZXMiOltdLCJlbmFibGVUb3JyZW50Ijp0cnVlLCJkZWR1cGxpY2F0ZVN0cmVhbXMiOnRydWUsImRlYnJpZFN0cmVhbVByb3h5UGFzc3dvcmQiOiIiLCJsYW5ndWFnZXMiOnsicmVxdWlyZWQiOlsicHQiXSwiYWxsb3dlZCI6WyJtdWx0aSIsImVuIiwiamEiLCJ6aCIsImtvIl0sImV4Y2x1ZGUiOlsibXVsdGkiLCJlbiIsImphIiwiemgiLCJydSIsImFyIiwiZXMiLCJmciIsImRlIiwiaXQiLCJrbyIsImhpIiwiYm4iLCJwYSIsIm1yIiwiZ3UiLCJ0YSIsInRlIiwia24iLCJtbCIsInRoIiwidmkiLCJpZCIsInRyIiwiaGUiLCJmYSIsInVrIiwiZWwiLCJsdCIsImx2IiwiZXQiLCJwbCIsImNzIiwic2siLCJodSIsInJvIiwiYmciLCJzciIsImhyIiwic2wiLCJubCIsImRhIiwiZmkiLCJzdiIsIm5vIiwibXMiLCJsYSJdLCJwcmVmZXJyZWQiOlsicHQiXX0sInJlc29sdXRpb25zIjp7InI1NzZwIjpmYWxzZSwicjQ4MHAiOmZhbHNlLCJyMzYwcCI6ZmFsc2UsInIyNDBwIjpmYWxzZX0sIm9wdGlvbnMiOnsicmVtb3ZlX3JhbmtzX3VuZGVyIjotMTAwMDAwMDAwMDAsImFsbG93X2VuZ2xpc2hfaW5fbGFuZ3VhZ2VzIjpmYWxzZSwicmVtb3ZlX3Vua25vd25fbGFuZ3VhZ2VzIjpmYWxzZX19/manifest.json"
     });
   }
 
-  // Torrentio
-  // ✅ Já inclui nyaasi, tokyotosho e anidex — principais fontes de anime
+  // Torrentio — ✅ suporta kitsu nativamente (nyaasi/tokyotosho/anidex)
   if (cfg.torrentio === true) {
     upstreams.push({
       u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,comando,bludv,micoleaodublado|language=portuguese|qualityfilter=480p,scr,cam/manifest.json"
     });
+  }
+
+  // Se for anime mas Torrentio não está ativo, retorna vazio
+  if (isAnime && upstreams.length === 0) {
+    console.log("ANIME SEM TORRENTIO ATIVO — retornando vazio");
+    return res.json({ streams: [] });
   }
 
   // Serviços de debrid
@@ -109,9 +116,9 @@ async function streamHandler(req, res) {
   if (cfg.alldebrid)   stores.push({ c: "dl", t: cfg.alldebrid });
 
   // LOGS
+  console.log(`TIPO: ${isAnime ? "ANIME (kitsu)" : "FILME/SÉRIE (tt)"}`);
   console.log("UPSTREAMS ATIVOS:");
   upstreams.forEach(u => console.log("→", u.u));
-
   console.log("DEBRID CONFIGURADOS:");
   stores.forEach(s => console.log("→", s.c));
 
@@ -132,7 +139,7 @@ async function streamHandler(req, res) {
 
     console.log("STREAMS RECEBIDOS:", data.streams?.length || 0);
 
-    // Cache seletivo — ✅ 30 minutos (1800 segundos)
+    // Cache seletivo — 30 minutos
     if (data.streams && data.streams.length > 0) {
       await kv.set(cacheKey, data, { ex: 1800 });
       console.log("CACHE SALVO ✔ (30 min)");
@@ -158,11 +165,15 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   const cfg = await kv.get(`addon:${id}`);
   if (!cfg) return res.json({ error: "Configuração não encontrada" });
 
+  const isAnime = imdb.startsWith("kitsu:");
   const upstreams = [];
 
-  upstreams.push({ u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" });
+  if (!isAnime) {
+    upstreams.push({ u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" });
+    upstreams.push({ u: "https://betor-scrap.vercel.app/manifest.json" });
+  }
 
-  if (cfg.cometa === true) {
+  if (cfg.cometa === true && !isAnime) {
     upstreams.push({ u: "https://comet.feels.legal/..." });
   }
 
@@ -186,7 +197,7 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
     `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
     `/stream/${type}/${imdb}.json`;
 
-  res.json({ wrapper, stremthruUrl });
+  res.json({ isAnime, wrapper, stremthruUrl });
 });
 
 // ===============================
