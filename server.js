@@ -16,54 +16,30 @@ const kv = new Redis({
 });
 
 // ===============================
-// HELPERS
+// COMET — gerado dinamicamente
+// Modo P2P (sem debrid), idioma requerido PT.
+// Os debrids do usuário são injetados pelo Stremthru no wrap.
 // ===============================
-
-/**
- * Gera a URL do manifest do Comet de forma dinâmica,
- * baseada nas configurações do usuário (debrid, idiomas, etc).
- */
-function getCometManifest(cfg) {
-  const debridServices = [];
-  if (cfg.realdebrid) debridServices.push({ id: "realdebrid", apiKey: cfg.realdebrid });
-  if (cfg.torbox)     debridServices.push({ id: "torbox",     apiKey: cfg.torbox });
-  if (cfg.premiumize) debridServices.push({ id: "premiumize", apiKey: cfg.premiumize });
-  if (cfg.debridlink) debridServices.push({ id: "debridlink", apiKey: cfg.debridlink });
-  if (cfg.alldebrid)  debridServices.push({ id: "alldebrid",  apiKey: cfg.alldebrid });
-
+function getCometManifest() {
   const cometCfg = {
     maxResultsPerResolution: 0,
     maxSize: 0,
     cachedOnly: false,
-    sortCachedUncachedTogether: false,
     removeTrash: true,
-    resultFormat: ["all"],
-    debridServices,
-    enableTorrent: true,
     deduplicateStreams: true,
-    debridStreamProxyPassword: "",
+    enableTorrent: true,
     languages: {
       required: ["pt"],
-      allowed: ["multi", "en", "ja", "zh", "ko"],
-      exclude: [
-        "multi","en","ja","zh","ru","ar","es","fr","de","it","ko","hi",
-        "bn","pa","mr","gu","ta","te","kn","ml","th","vi","id","tr","he",
-        "fa","uk","el","lt","lv","et","pl","cs","sk","hu","ro","bg","sr",
-        "hr","sl","nl","da","fi","sv","no","ms","la"
-      ],
       preferred: ["pt"]
-    },
-    resolutions: { r576p: false, r480p: false, r360p: false, r240p: false },
-    options: {
-      remove_ranks_under: -100000000000,
-      allow_english_in_languages: false,
-      remove_unknown_languages: false
     }
   };
 
   const encoded = Buffer.from(JSON.stringify(cometCfg)).toString("base64");
   return `https://comet.feels.legal/${encoded}/manifest.json`;
 }
+
+// Pré-computado uma vez (config é estática, não depende do usuário)
+const COMET_MANIFEST_URL = getCometManifest();
 
 // ===============================
 // ROTA PARA GERAR CONFIGURAÇÃO
@@ -144,21 +120,20 @@ async function streamHandler(req, res) {
     });
   }
 
-  // ✅ Comet — manifest gerado dinamicamente com debrid do usuário
+  // ✅ Comet — P2P + idioma PT, debrids injetados pelo Stremthru
   if (cfg.cometa === true) {
-    const cometUrl = getCometManifest(cfg);
-    upstreams.push({ u: cometUrl });
-    console.log("☄️ Comet URL →", cometUrl);
+    upstreams.push({ u: COMET_MANIFEST_URL });
+    console.log("☄️ Comet →", COMET_MANIFEST_URL);
   }
 
-  // Torrentio — suporta kitsu nativamente (nyaasi/tokyotosho/anidex)
+  // Torrentio — suporta kitsu nativamente (nyaasi/tokyotosho/anidex/nekobt)
   if (cfg.torrentio === true) {
     upstreams.push({
       u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
     });
   }
 
-  // Serviços de debrid
+  // Serviços de debrid — passados ao Stremthru para o wrap
   const stores = [];
   if (cfg.realdebrid)  stores.push({ c: "rd", t: cfg.realdebrid });
   if (cfg.torbox)      stores.push({ c: "tb", t: cfg.torbox });
@@ -226,7 +201,7 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   }
 
   if (cfg.cometa === true) {
-    upstreams.push({ u: getCometManifest(cfg) });
+    upstreams.push({ u: COMET_MANIFEST_URL });
   }
 
   if (cfg.torrentio === true) {
@@ -249,7 +224,7 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
     `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
     `/stream/${type}/${imdb}.json`;
 
-  res.json({ isAnime, cometUrl: cfg.cometa ? getCometManifest(cfg) : null, wrapper, stremthruUrl });
+  res.json({ isAnime, cometManifestUrl: COMET_MANIFEST_URL, wrapper, stremthruUrl });
 });
 
 // ===============================
