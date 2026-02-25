@@ -16,6 +16,21 @@ const kv = new Redis({
 });
 
 // ===============================
+// HELPERS DE ENCODING
+// ===============================
+function toB64(obj) {
+  return Buffer.from(JSON.stringify(obj)).toString("base64");
+}
+
+function toB64Raw(obj) {
+  return Buffer.from(JSON.stringify(obj))
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+// ===============================
 // COMET — gerado dinamicamente
 // ===============================
 function getCometManifest() {
@@ -31,12 +46,28 @@ function getCometManifest() {
       preferred: ["pt"]
     }
   };
-
-  const encoded = Buffer.from(JSON.stringify(cometCfg)).toString("base64");
-  return `https://comet.feels.legal/${encoded}/manifest.json`;
+  return `https://comet.feels.legal/${toB64(cometCfg)}/manifest.json`;
 }
 
 const COMET_MANIFEST_URL = getCometManifest();
+
+// ===============================
+// TORZ (DUBLADO) — gerado dinamicamente
+// Usa /stremio/torz/ com filtro de nomes PT-BR.
+// Por ser um scraper com filtro, pode demorar mais —
+// tratado igual ao dfaddon: participa da janela rápida
+// e é incluído no background com timeout estendido.
+// ===============================
+function getTorzManifest() {
+  const torzCfg = {
+    stores: [{ c: "p2p", t: "" }],
+    filter:
+      "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|sf|bioma|c76|c0ral|sigma|andrehsa|riper|sigla|eck)'"
+  };
+  return `https://stremthru.13377001.xyz/stremio/torz/${toB64Raw(torzCfg)}/manifest.json`;
+}
+
+const TORZ_MANIFEST_URL = getTorzManifest();
 
 // ===============================
 // FUNÇÃO AUXILIAR (DRY)
@@ -55,6 +86,11 @@ function buildUpstreamsAndStores(cfg, imdb) {
     });
     upstreams.push({
       u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json"
+    });
+    // Torz: scraper P2P com filtro PT-BR — comportamento similar ao dfaddon
+    upstreams.push({
+      u: TORZ_MANIFEST_URL,
+      isTorz: true // flag para usar URL diferente no fetchUpstream
     });
   }
 
@@ -148,11 +184,22 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
 
     // ===============================
     // HELPER: busca um único upstream
+    // Torz usa /stremio/torz/<config_b64>/stream/...
+    // Os demais usam /stremio/wrap/<wrapper_b64>/stream/...
     // ===============================
     const fetchUpstream = async (upstream, index, timeoutMs = 20000) => {
-      const wrapper = { upstreams: [upstream], stores };
-      const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
-      const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
+      let url;
+
+      if (upstream.isTorz) {
+        // Torz: a URL do manifest já contém o config encoded,
+        // basta substituir /manifest.json pelo path de stream
+        const base = upstream.u.replace("/manifest.json", "");
+        url = `${base}/stream/${type}/${imdb}.json`;
+      } else {
+        const wrapper = { upstreams: [{ u: upstream.u }], stores };
+        const encoded = toB64(wrapper);
+        url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
+      }
 
       const { data } = await axios.get(url, {
         timeout: timeoutMs,
@@ -160,7 +207,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
       });
 
       const streams = data.streams || [];
-      console.log(`✅ Upstream ${index + 1}: ${streams.length} streams`);
+      console.log(`✅ Upstream ${index + 1}${upstream.isTorz ? " [Torz]" : ""}: ${streams.length} streams`);
       return streams;
     };
 
@@ -261,10 +308,10 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   if (!cfg) return res.json({ error: "CFG não encontrada" });
 
   const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
-  res.json({ 
-    upstreams: upstreams.length, 
+  res.json({
+    upstreams: upstreams.map((u, i) => ({ index: i + 1, url: u.u, isTorz: !!u.isTorz })),
     stores: stores.map(s => s.c),
-    imdb 
+    imdb
   });
 });
 
