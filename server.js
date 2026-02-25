@@ -149,13 +149,13 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     // ===============================
     // HELPER: busca um único upstream
     // ===============================
-    const fetchUpstream = async (upstream, index) => {
+    const fetchUpstream = async (upstream, index, timeoutMs = 20000) => {
       const wrapper = { upstreams: [upstream], stores };
       const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
       const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
 
       const { data } = await axios.get(url, {
-        timeout: 20000,
+        timeout: timeoutMs,
         headers: { "User-Agent": "DebridBR/1.0" }
       });
 
@@ -199,7 +199,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         console.log("🔄 Background: buscando todos os upstreams...");
 
         const promises = upstreams.map((upstream, i) =>
-          fetchUpstream(upstream, i).catch(err => {
+          fetchUpstream(upstream, i, 50000).catch(err => {
             console.log(`⏰ Upstream ${i + 1} background: ERRO — ${err.message}`);
             return [];
           })
