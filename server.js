@@ -120,6 +120,13 @@ async function streamHandler(req, res) {
     });
   }
 
+    // Dfindexer — apenas IDs IMDB (tt), não suporta kitsu
+  if (!isAnime) {
+    upstreams.push({
+      u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json"  // Betor — apenas IDs IMDB (tt), não suporta kitsu
+    });
+  }
+
   // ✅ Comet — P2P + idioma PT, debrids injetados pelo Stremthru
   if (cfg.cometa === true) {
     upstreams.push({ u: COMET_MANIFEST_URL });
