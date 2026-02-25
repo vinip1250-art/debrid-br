@@ -12,7 +12,6 @@ const kv = new Redis({
   token: process.env.KV_REST_API_TOKEN
 });
 
-// ===============================
 function getCometManifest() {
   const cometCfg = {
     maxResultsPerResolution: 0,
@@ -32,27 +31,15 @@ function buildUpstreamsAndStores(cfg, imdb) {
   const isAnime = imdb.startsWith("kitsu:");
   const upstreams = [];
 
-  upstreams.push({ 
-    name: "Brazuca", 
-    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" 
-  });
+  upstreams.push({ name: "Brazuca", u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" });
   
   if (!isAnime) {
-    upstreams.push({ 
-      name: "Betor", 
-      u: "https://betor-scrap.vercel.app/manifest.json" 
-    });
-    upstreams.push({ 
-      name: "Dfindexer", 
-      u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json" 
-    });
+    upstreams.push({ name: "Betor", u: "https://betor-scrap.vercel.app/manifest.json" });
+    upstreams.push({ name: "Dfindexer", u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json" });
   }
 
-  if (cfg.cometa === true) upstreams.push({ 
-    name: "Comet", 
-    u: COMET_MANIFEST_URL 
-  });
-  if (cfg.torrentio === true) upstreams.push({
+  if (cfg.cometa === true) upstreams.push({ name: "Comet", u: COMET_MANIFEST_URL });
+  if (cfg.torrentio === true) upstreams.push({ 
     name: "Torrentio", 
     u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
   });
@@ -67,7 +54,6 @@ function buildUpstreamsAndStores(cfg, imdb) {
   return { upstreams, stores };
 }
 
-// ===============================
 app.post("/gerar", async (req, res) => {
   const id = Math.random().toString(36).substring(2, 10);
   await kv.set(`addon:${id}`, req.body);
@@ -75,16 +61,15 @@ app.post("/gerar", async (req, res) => {
   res.json({ id });
 });
 
-// ===============================
 app.get("/:id/manifest.json", async (req, res) => {
   try {
     const cfg = await kv.get(`addon:${req.params.id}`);
     if (!cfg) return res.status(404).json({ error: "Manifest não encontrado" });
     res.json({
       id: `brazuca-debrid-${req.params.id}`,
-      version: "3.9.3-FIX",
-      name: cfg.nome || "BRDebrid Pro",
-      description: "Cache Background + Dfindexer Fix",
+      version: "4.0.0-ANTIRATE",
+      name: cfg.nome || "BRDebrid Anti-RateLimit",
+      description: "Fast + Background Sequencial",
       logo: cfg.icone || "https://brazuca-debrid.vercel.app/logo.png",
       types: ["movie", "series", "anime"],
       resources: [{ name: "stream", types: ["movie", "series"], idPrefixes: ["tt", "kitsu"] }],
@@ -92,81 +77,76 @@ app.get("/:id/manifest.json", async (req, res) => {
       behaviorHints: { configurable: true, configurationRequired: false }
     });
   } catch (err) {
-    console.error("Manifest:", err);
     res.status(500).json({ error: "Erro" });
   }
 });
 
 // ===============================
-async function fetchWithTimeout(upstreams, stores, type, imdb, timeoutMs, phase = "fast") {
-  const promises = upstreams.map(async (upstream, i) => {
-    try {
-      const wrapper = { upstreams: [upstream], stores };
-      const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
-      const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
-      
-      const response = await axios.get(url, { 
-        timeout: timeoutMs,
-        headers: { "User-Agent": `DebridBR-${phase}/1.0` }
-      });
-      
-      const count = response.data.streams?.length || 0;
-      if (count > 0) {
-        console.log(`✅ ${phase} ${upstream.name || i+1} [${timeoutMs/1000}s]: ${count}`);
-      }
-      return response.data.streams || [];
-    } catch (err) {
-      return [];
-    }
-  });
-
-  const results = await Promise.allSettled(promises);
-  return results
-    .filter(r => r.status === 'fulfilled')
-    .flatMap(r => r.value)
-    .filter(s => s);
+async function fetchOneStream(upstream, stores, type, imdb, timeoutMs = 20000, label = "") {
+  try {
+    const wrapper = { upstreams: [upstream], stores };
+    const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
+    const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
+    
+    const { data } = await axios.get(url, { 
+      timeout: timeoutMs,
+      headers: { "User-Agent": `DebridBR-${label}/1.0` }
+    });
+    
+    const count = data.streams?.length || 0;
+    if (count > 0) console.log(`✅ ${label} ${upstream.name}: ${count}`);
+    return data.streams || [];
+  } catch (err) {
+    console.log(`⚠️  ${label} ${upstream.name}: timeout`);
+    return [];
+  }
 }
 
 // ===============================
 async function fetchStreamsFast(upstreams, stores, type, imdb) {
-  console.log("⚡ Busca RÁPIDA (2 fases anti-vazio)...");
+  console.log("⚡ RÁPIDO (3 paralelos máx)...");
   
-  let streams = await fetchWithTimeout(upstreams, stores, type, imdb, 12000, "fast1");
-  
-  if (streams.length === 0) {
-    console.log("🔄 Fase 2 ativada...");
-    streams = await fetchWithTimeout(upstreams, stores, type, imdb, 8000, "fast2");
-  }
-  
+  // Máx 3 simultâneos (anti-rate)
+  const limit3 = (promises) => {
+    const results = [];
+    for (let i = 0; i < promises.length; i += 3) {
+      results.push(...await Promise.allSettled(promises.slice(i, i + 3)));
+    }
+    return results;
+  };
+
+  const promises = upstreams.slice(0, 9).map((u, i) => // Primeiros 9
+    fetchOneStream(u, stores, type, imdb, 12000, `fast${i}`)
+  );
+
+  const results = await limit3(promises);
+  const streams = results
+    .filter(r => r.status === 'fulfilled')
+    .flatMap(r => r.value)
+    .filter(s => s);
+
   console.log(`⚡ RÁPIDO: ${streams.length} streams`);
   return streams;
 }
 
 // ===============================
 async function fetchStreamsComplete(upstreams, stores, type, imdb) {
-  console.log("⏳ Background COMPLETO (60s máx)...");
-  
-  const promises = upstreams.map(async (upstream, i) => {
-    try {
-      const wrapper = { upstreams: [upstream], stores };
-      const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
-      const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
-      
-      // 60s pro Dfindexer!
-      const { data } = await axios.get(url, { timeout: 60000 });
-      const count = data.streams?.length || 0;
-      console.log(`✅ Bg ${upstream.name || i+1}: ${count} streams`);
-      return data.streams || [];
-    } catch (err) {
-      console.log(`⚠️ Bg ${upstream.name || i+1}: timeout`);
-      return [];
-    }
-  });
+  console.log("⏳ Background SEQUENCIAL (5s delay)...");
+  const allStreams = [];
 
-  const results = await Promise.allSettled(promises);
-  const completeStreams = results.filter(r => r.status === 'fulfilled').flatMap(r => r.value);
-  console.log(`💾 Cache COMPLETO: ${completeStreams.length} streams`);
-  return { streams: completeStreams };
+  for (const [i, upstream] of upstreams.entries()) {
+    const streams = await fetchOneStream(upstream, stores, type, imdb, 45000, `bg${i}`);
+    allStreams.push(...streams);
+    
+    // Delay anti-rate limit
+    if (i < upstreams.length - 1) {
+      console.log(`⏳ Aguardando 5s... (${i + 1}/${upstreams.length})`);
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+
+  console.log(`💾 COMPLETO: ${allStreams.length} streams (${upstreams.length} addons)`);
+  return { streams: allStreams };
 }
 
 // ===============================
@@ -179,46 +159,39 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
 
     const cacheKey = `cache:${id}:${type}:${imdb}`;
     const cached = await kv.get(cacheKey);
-    if (cached) {
-      console.log("💾 CACHE HIT:", cached.streams.length, "streams");
+    if (cached && cached.streams && cached.streams.length > 0) {
+      console.log("💾 CACHE HIT:", cached.streams.length);
       return res.json(cached);
     }
 
     const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
-    console.log(`🎬 ${type}/${imdb} → ${upstreams.length} upstreams`);
+    console.log(`🎬 ${type}/${imdb} → ${upstreams.length} addons`);
 
-    // 🚀 RESPOSTA RÁPIDA
     const fastStreams = await fetchStreamsFast(upstreams, stores, type, imdb);
     const response = { streams: fastStreams };
 
-    // 🔥 BACKGROUND CACHE (SEMPRE salva!)
+    // Background SEQUENCIAL (sem rate limit!)
     (async () => {
       try {
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Bg timeout')), 65000)
-        );
+        const completeResponse = await fetchStreamsComplete(upstreams, stores, type, imdb);
         
-        const completeResponse = await Promise.race([
-          fetchStreamsComplete(upstreams, stores, type, imdb),
-          timeoutPromise
-        ]);
-        
-        // ✅ SEMPRE salva (mesmo se pior)
-        await kv.set(cacheKey, completeResponse);
-        await kv.expire(cacheKey, 1800); // 30min separado!
-        console.log("💾 Cache SALVO (Dfindexer incluso)");
-        
+        // Salva SEMPRE se tiver streams
+        if (completeResponse.streams.length > 0) {
+          await kv.set(cacheKey, completeResponse);
+          await kv.expire(cacheKey, 1800);
+          console.log("💾 Cache SALVO completo!");
+        }
       } catch (err) {
-        console.log("⏰ Background timeout - sem cache completo");
+        console.log("❌ Background falhou");
       }
     })();
 
-    console.log(`📤 Enviando rápido: ${fastStreams.length} streams`);
+    console.log(`📤 Rápido: ${fastStreams.length}`);
     res.json(response);
 
   } catch (err) {
-    console.error("🚨 Erro geral:", err.message);
-    res.status(500).json({ streams: [], error: "Erro interno" });
+    console.error("Erro:", err.message);
+    res.status(500).json({ streams: [], error: "Erro" });
   }
 });
 
@@ -226,22 +199,13 @@ app.get("/:id/stream/:type/:imdb", (req, res) => {
   res.redirect(`/${req.params.id}/stream/${req.params.type}/${req.params.imdb}.json`);
 });
 
-// ===============================
 app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   const { id, type, imdb } = req.params;
   const cfg = await kv.get(`addon:${id}`);
-  if (!cfg) return res.json({ error: "CFG não encontrada" });
-  
   const { upstreams } = buildUpstreamsAndStores(cfg, imdb);
-  res.json({ 
-    upstreams: upstreams.map(u => u.name), 
-    count: upstreams.length,
-    imdb, 
-    type
-  });
+  res.json({ upstreams: upstreams.map(u => u.name), imdb, type });
 });
 
-// ===============================
 app.get("/", (req, res) => {
   res.sendFile(__dirname + "/public/index.html");
 });
