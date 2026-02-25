@@ -53,10 +53,6 @@ const COMET_MANIFEST_URL = getCometManifest();
 
 // ===============================
 // TORZ (DUBLADO) — gerado dinamicamente
-// Não inclui stores com token vazio — isso causava erro 500.
-// O Torz é P2P direto, sem necessidade de debrid no config.
-// Os stores do usuário (rd, tb, etc) são passados via
-// parâmetro de query na URL de stream, não no config base.
 // ===============================
 function getTorzManifest() {
   const torzCfg = {
@@ -89,7 +85,6 @@ function buildUpstreamsAndStores(cfg, imdb) {
       name: "DFIndexer",
       u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json"
     });
-    // Torz: P2P com filtro PT-BR, sem stores no config
     upstreams.push({
       name: "Torz",
       u: TORZ_MANIFEST_URL,
@@ -176,7 +171,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
 
     const cacheKey = `cache:${id}:${type}:${imdb}`;
 
-    // ✅ CACHE HIT — retorna instantaneamente com todos os resultados
+    // CACHE HIT — retorna instantaneamente com todos os resultados
     const cached = await kv.get(cacheKey);
     if (cached) {
       console.log(`💾 CACHE HIT — ${cached.streams?.length || 0} streams instantâneos`);
@@ -189,14 +184,13 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
 
     // ===============================
     // HELPER: busca um único upstream
-    // Torz usa /stremio/torz/<config_b64>/stream/...
-    // Os demais usam /stremio/wrap/<wrapper_b64>/stream/...
+    // Torz  → /stremio/torz/<config_b64>/stream/...
+    // Demais → /stremio/wrap/<wrapper_b64>/stream/...
     // ===============================
     const fetchUpstream = async (upstream, timeoutMs = 20000) => {
       let url;
 
       if (upstream.isTorz) {
-        // Torz: substitui /manifest.json pelo path de stream
         const base = upstream.u.replace("/manifest.json", "");
         url = `${base}/stream/${type}/${imdb}.json`;
       } else {
@@ -204,12 +198,20 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         url = `https://stremthru.13377001.xyz/stremio/wrap/${toB64(wrapper)}/stream/${type}/${imdb}.json`;
       }
 
-      const { data } = await axios.get(url, {
-        timeout: timeoutMs,
-        headers: { "User-Agent": "DebridBR/1.0" }
-      });
-
-      return data.streams || [];
+      try {
+        const { data } = await axios.get(url, {
+          timeout: timeoutMs,
+          headers: { "User-Agent": "DebridBR/1.0" }
+        });
+        return data.streams || [];
+      } catch (err) {
+        // Loga detalhes do erro HTTP para facilitar debug
+        if (err.response) {
+          console.log(`🔍 [${upstream.name}] HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
+          console.log(`🔍 [${upstream.name}] URL: ${url}`);
+        }
+        throw err;
+      }
     };
 
     // ===============================
@@ -226,11 +228,8 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
       const total = upstreams.length;
 
       const timer = setTimeout(() => {
-        const pending = upstreams
-          .filter((_, i) => i >= finished)
-          .map(u => u.name)
-          .join(", ") || "nenhum";
-        console.log(`⏱️  Janela 10s encerrada — ${accumulated.length} streams | pendentes: ${pending}`);
+        const names = upstreams.slice(finished).map(u => u.name).join(", ");
+        console.log(`⏱️  Janela 10s encerrada — ${accumulated.length} streams | ainda pendentes: ${names || "nenhum"}`);
         resolve([...accumulated]);
       }, FAST_TIMEOUT);
 
@@ -262,7 +261,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     // ===============================
     const backgroundFetch = async () => {
       try {
-        console.log(`\n🔄 [Background] iniciando busca completa para ${imdb}...`);
+        console.log(`\n🔄 [Background] iniciando para ${imdb}...`);
 
         const results = await Promise.allSettled(
           upstreams.map(upstream =>
