@@ -22,6 +22,7 @@ function toB64(obj) {
   return Buffer.from(JSON.stringify(obj)).toString("base64");
 }
 
+// URL-safe base64 sem padding — necessário para URLs do Torz
 function toB64Raw(obj) {
   return Buffer.from(JSON.stringify(obj))
     .toString("base64")
@@ -31,7 +32,7 @@ function toB64Raw(obj) {
 }
 
 // ===============================
-// COMET — gerado dinamicamente
+// COMET — gerado dinamicamente (sem tokens, ok ser global)
 // ===============================
 function getCometManifest() {
   const cometCfg = {
@@ -52,17 +53,19 @@ function getCometManifest() {
 const COMET_MANIFEST_URL = getCometManifest();
 
 // ===============================
-// TORZ (DUBLADO) — gerado dinamicamente
+// TORZ — gerado por request com os stores do usuário
+// O Torz embute tudo no config da URL (stores + filter),
+// diferente do wrap que recebe stores separadamente.
 // ===============================
-function getTorzManifest() {
+function getTorzUrl(stores, type, imdb) {
   const torzCfg = {
+    stores,
     filter:
       "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|sf|bioma|c76|c0ral|sigma|andrehsa|riper|sigla|eck)'"
   };
-  return `https://stremthru.13377001.xyz/stremio/torz/${toB64Raw(torzCfg)}/manifest.json`;
+  const encoded = toB64Raw(torzCfg);
+  return `https://stremthru.13377001.xyz/stremio/torz/${encoded}/stream/${type}/${imdb}.json`;
 }
-
-const TORZ_MANIFEST_URL = getTorzManifest();
 
 // ===============================
 // FUNÇÃO AUXILIAR (DRY)
@@ -85,9 +88,9 @@ function buildUpstreamsAndStores(cfg, imdb) {
       name: "DFIndexer",
       u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json"
     });
+    // Torz: isTorz=true — URL de stream gerada dinamicamente com stores
     upstreams.push({
       name: "Torz",
-      u: TORZ_MANIFEST_URL,
       isTorz: true
     });
   }
@@ -184,15 +187,18 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
 
     // ===============================
     // HELPER: busca um único upstream
-    // Torz  → /stremio/torz/<config_b64>/stream/...
-    // Demais → /stremio/wrap/<wrapper_b64>/stream/...
+    //
+    // Torz  → URL gerada dinamicamente com stores do usuário embutidos
+    //         ex: /stremio/torz/<base64(stores+filter)>/stream/...
+    //
+    // Demais → /stremio/wrap/<base64(upstreams+stores)>/stream/...
     // ===============================
     const fetchUpstream = async (upstream, timeoutMs = 20000) => {
       let url;
 
       if (upstream.isTorz) {
-        const base = upstream.u.replace("/manifest.json", "");
-        url = `${base}/stream/${type}/${imdb}.json`;
+        // Gera URL com os stores do usuário embutidos no config
+        url = getTorzUrl(stores, type, imdb);
       } else {
         const wrapper = { upstreams: [{ u: upstream.u }], stores };
         url = `https://stremthru.13377001.xyz/stremio/wrap/${toB64(wrapper)}/stream/${type}/${imdb}.json`;
@@ -229,7 +235,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
 
       const timer = setTimeout(() => {
         const names = upstreams.slice(finished).map(u => u.name).join(", ");
-        console.log(`⏱️  Janela 10s encerrada — ${accumulated.length} streams | ainda pendentes: ${names || "nenhum"}`);
+        console.log(`⏱️  Janela 10s encerrada — ${accumulated.length} streams | pendentes: ${names || "nenhum"}`);
         resolve([...accumulated]);
       }, FAST_TIMEOUT);
 
@@ -315,12 +321,16 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   if (!cfg) return res.json({ error: "CFG não encontrada" });
 
   const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
+
+  // Mostra a URL real que o Torz usaria
+  const torzUrl = getTorzUrl(stores, type, imdb);
+
   res.json({
     upstreams: upstreams.map((u, i) => ({
       index: i + 1,
       name: u.name,
       isTorz: !!u.isTorz,
-      url: u.u
+      url: u.isTorz ? torzUrl : u.u
     })),
     stores: stores.map(s => s.c),
     imdb
