@@ -42,6 +42,55 @@ function getCometManifest() {
 const COMET_MANIFEST_URL = getCometManifest();
 
 // ===============================
+// FUNÇÃO AUXILIAR (DRY)
+// ===============================
+function buildUpstreamsAndStores(cfg, imdb) {
+  const isAnime = imdb.startsWith("kitsu:");
+  const upstreams = [];
+
+  // Brazuca — suporta filmes, séries e animes
+  upstreams.push({
+    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
+  });
+
+  // Betor — apenas IDs IMDB (tt), não suporta kitsu
+  if (!isAnime) {
+    upstreams.push({
+      u: "https://betor-scrap.vercel.app/manifest.json"
+    });
+  }
+
+  // Dfindexer — apenas IDs IMDB (tt), não suporta kitsu
+  if (!isAnime) {
+    upstreams.push({
+      u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json"
+    });
+  }
+
+  // Comet — P2P + idioma PT, debrids injetados pelo Stremthru
+  if (cfg.cometa === true) {
+    upstreams.push({ u: COMET_MANIFEST_URL });
+  }
+
+  // Torrentio — suporta kitsu nativamente (nyaasi/tokyotosho/anidex/nekobt)
+  if (cfg.torrentio === true) {
+    upstreams.push({
+      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
+    });
+  }
+
+  // Serviços de debrid — passados ao Stremthru para o wrap
+  const stores = [];
+  if (cfg.realdebrid)  stores.push({ c: "rd", t: cfg.realdebrid });
+  if (cfg.torbox)      stores.push({ c: "tb", t: cfg.torbox });
+  if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
+  if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
+  if (cfg.alldebrid)   stores.push({ c: "ad", t: cfg.alldebrid }); // código diferente de "dl"
+
+  return { isAnime, upstreams, stores };
+}
+
+// ===============================
 // ROTA PARA GERAR CONFIGURAÇÃO
 // ===============================
 app.post("/gerar", async (req, res) => {
@@ -105,47 +154,7 @@ async function streamHandler(req, res) {
 
   console.log("CACHE MISS →", imdb);
 
-  const isAnime = imdb.startsWith("kitsu:");
-  const upstreams = [];
-
-  // ✅ Brazuca — suporta filmes, séries e animes
-  upstreams.push({
-    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
-  });
-
-  // Betor — apenas IDs IMDB (tt), não suporta kitsu
-  if (!isAnime) {
-    upstreams.push({
-      u: "https://betor-scrap.vercel.app/manifest.json"
-    });
-  }
-    // Dfindexer — apenas IDs IMDB (tt), não suporta kitsu
-  if (!isAnime) {
-    upstreams.push({
-      u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json"  // Betor — apenas IDs IMDB (tt), não suporta kitsu
-    });
-  }
-
-  // ✅ Comet — P2P + idioma PT, debrids injetados pelo Stremthru
-  if (cfg.cometa === true) {
-    upstreams.push({ u: COMET_MANIFEST_URL });
-    console.log("☄️ Comet →", COMET_MANIFEST_URL);
-  }
-
-  // Torrentio — suporta kitsu nativamente (nyaasi/tokyotosho/anidex/nekobt)
-  if (cfg.torrentio === true) {
-    upstreams.push({
-      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
-    });
-  }
-
-  // Serviços de debrid — passados ao Stremthru para o wrap
-  const stores = [];
-  if (cfg.realdebrid)  stores.push({ c: "rd", t: cfg.realdebrid });
-  if (cfg.torbox)      stores.push({ c: "tb", t: cfg.torbox });
-  if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
-  if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
-  if (cfg.alldebrid)   stores.push({ c: "dl", t: cfg.alldebrid });
+  const { isAnime, upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
 
   // LOGS
   console.log(`TIPO: ${isAnime ? "ANIME (kitsu)" : "FILME/SÉRIE (tt)"}`);
@@ -181,8 +190,8 @@ async function streamHandler(req, res) {
 
     return res.json(data);
   } catch (err) {
-    console.log("ERRO NO STREMTHRU:", err.message);
-    return res.json({ streams: [] });
+    console.error("ERRO NO STREMTHRU:", err.message);
+    return res.json({ streams: [], error: "Falha ao buscar streams" });
   }
 }
 
@@ -197,31 +206,7 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   const cfg = await kv.get(`addon:${id}`);
   if (!cfg) return res.json({ error: "Configuração não encontrada" });
 
-  const isAnime = imdb.startsWith("kitsu:");
-  const upstreams = [];
-
-  upstreams.push({ u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" });
-
-  if (!isAnime) {
-    upstreams.push({ u: "https://betor-scrap.vercel.app/manifest.json" });
-  }
-
-  if (cfg.cometa === true) {
-    upstreams.push({ u: COMET_MANIFEST_URL });
-  }
-
-  if (cfg.torrentio === true) {
-    upstreams.push({
-      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
-    });
-  }
-
-  const stores = [];
-  if (cfg.realdebrid)  stores.push({ c: "rd", t: cfg.realdebrid });
-  if (cfg.torbox)      stores.push({ c: "tb", t: cfg.torbox });
-  if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
-  if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
-  if (cfg.alldebrid)   stores.push({ c: "dl", t: cfg.alldebrid });
+  const { isAnime, upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
 
   const wrapper = { upstreams, stores };
   const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
