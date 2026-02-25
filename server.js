@@ -174,7 +174,7 @@ async function streamHandler(req, res) {
 
   try {
     const { data } = await axios.get(stremthruUrl, {
-      timeout: 20000,
+      timeout: 30000,
       headers: { "User-Agent": "DebridBR/1.0" }
     });
 
