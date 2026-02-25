@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const { Redis } = require("@upstash/redis");
+const pLimit = require("p-limit"); // npm install p-limit
 
 const app = express();
 app.use(cors());
@@ -85,7 +86,7 @@ function buildUpstreamsAndStores(cfg, imdb) {
   if (cfg.torbox)      stores.push({ c: "tb", t: cfg.torbox });
   if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
   if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
-  if (cfg.alldebrid)   stores.push({ c: "ad", t: cfg.alldebrid }); // código diferente de "dl"
+  if (cfg.alldebrid)   stores.push({ c: "ad", t: cfg.alldebrid });
 
   return { isAnime, upstreams, stores };
 }
@@ -136,7 +137,7 @@ app.get("/:id/manifest.json", async (req, res) => {
 });
 
 // ===============================
-// STREAM (com cache 30 min + logs)
+// STREAM PARALELO (timeout individual 20s + p-limit 3)
 // ===============================
 async function streamHandler(req, res) {
   const { id, type, imdb } = req.params;
@@ -152,54 +153,81 @@ async function streamHandler(req, res) {
     return res.json(cached);
   }
 
-  console.log("CACHE MISS →", imdb);
+  console.log("🚀 CACHE MISS →", imdb);
 
-  const { isAnime, upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
+  const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
 
-  // LOGS
-  console.log(`TIPO: ${isAnime ? "ANIME (kitsu)" : "FILME/SÉRIE (tt)"}`);
-  console.log("UPSTREAMS ATIVOS:");
-  upstreams.forEach(u => console.log("→", u.u));
-  console.log("DEBRID CONFIGURADOS:");
-  stores.forEach(s => console.log("→", s.c));
+  // LOGS iniciais
+  console.log("📡 UPSTREAMS:", upstreams.length);
+  console.log("🔑 DEBRIDS:", stores.map(s => s.c).join(", ") || "Nenhum");
 
-  const wrapper = { upstreams, stores };
-  const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
+  // ✅ PARALELO CONTROLADO: Máx 3 simultâneos, timeout 20s cada
+  const limit = pLimit(3); // npm install p-limit
+  
+  const promises = upstreams.map((upstream, index) => 
+    limit(async () => {
+      const wrapper = { upstreams: [upstream], stores };
+      const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
+      
+      const stremthruUrl = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
+      
+      const shortUrl = upstream.u.slice(-30); // Para log limpo
+      
+      try {
+        const { data } = await axios.get(stremthruUrl, {
+          timeout: 20000, // 20s INDIVIDUAL por upstream
+          headers: { "User-Agent": "DebridBR/1.0" }
+        });
+        
+        console.log(`✅ ${index + 1}/${upstreams.length} [${shortUrl}] → ${data.streams?.length || 0} streams`);
+        return data.streams || [];
+        
+      } catch (err) {
+        if (err.code === 'ECONNABORTED') {
+          console.log(`⏰ ${index + 1}/${upstreams.length} [${shortUrl}] → TIMEOUT 20s`);
+        } else {
+          console.log(`❌ ${index + 1}/${upstreams.length} [${shortUrl}] → ${err.message.slice(0, 30)}`);
+        }
+        return [];
+      }
+    })
+  );
 
-  const stremthruUrl =
-    `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
-    `/stream/${type}/${imdb}.json`;
-
-  console.log("URL FINAL →", stremthruUrl);
-
-  try {
-    const { data } = await axios.get(stremthruUrl, {
-      timeout: 30000,
-      headers: { "User-Agent": "DebridBR/1.0" }
-    });
-
-    console.log("STREAMS RECEBIDOS:", data.streams?.length || 0);
-
-    // Cache seletivo — 30 minutos
-    if (data.streams && data.streams.length > 0) {
-      await kv.set(cacheKey, data, { ex: 1800 });
-      console.log("CACHE SALVO ✔ (30 min)");
-    } else {
-      console.log("CACHE NÃO SALVO (streams vazios)");
+  // Executa com controle de concorrência
+  const results = await Promise.allSettled(promises);
+  
+  // Agrega streams válidos
+  const allStreams = [];
+  let successCount = 0;
+  
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled' && result.value.length > 0) {
+      allStreams.push(...result.value);
+      successCount++;
+      console.log(`📈 +${result.value.length} streams (upstream ${index + 1})`);
     }
+  });
 
-    return res.json(data);
-  } catch (err) {
-    console.error("ERRO NO STREMTHRU:", err.message);
-    return res.json({ streams: [], error: "Falha ao buscar streams" });
+  console.log(`🎉 FINAL: ${allStreams.length} streams (${successCount}/${upstreams.length} upstreams OK)`);
+
+  const response = { streams: allStreams };
+
+  // Cache seletivo — 30 minutos
+  if (allStreams.length > 0) {
+    await kv.set(cacheKey, response, { ex: 1800 });
+    console.log("💾 CACHE SALVO (30min)");
+  } else {
+    console.log("⚠️  Sem streams → sem cache");
   }
+
+  return res.json(response);
 }
 
 app.get("/:id/stream/:type/:imdb.json", streamHandler);
 app.get("/:id/stream/:type/:imdb", streamHandler);
 
 // ===============================
-// ROTA DE DEBUG
+// ROTA DE DEBUG (mantém original)
 // ===============================
 app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   const { id, type, imdb } = req.params;
@@ -215,7 +243,13 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
     `https://stremthru.13377001.xyz/stremio/wrap/${encoded}` +
     `/stream/${type}/${imdb}.json`;
 
-  res.json({ isAnime, cometManifestUrl: COMET_MANIFEST_URL, wrapper, stremthruUrl });
+  res.json({ 
+    isAnime, 
+    upstreamsCount: upstreams.length,
+    debrips: stores.map(s => s.c),
+    cometManifestUrl: COMET_MANIFEST_URL, 
+    stremthruUrl 
+  });
 });
 
 // ===============================
