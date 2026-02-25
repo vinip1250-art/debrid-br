@@ -118,7 +118,7 @@ async function streamHandler(req, res) {
     upstreams.push({
       u: "https://betor-scrap.vercel.app/manifest.json"
     });
-  
+  }
     // Dfindexer — apenas IDs IMDB (tt), não suporta kitsu
   if (!isAnime) {
     upstreams.push({
