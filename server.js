@@ -53,14 +53,13 @@ const COMET_MANIFEST_URL = getCometManifest();
 
 // ===============================
 // TORZ (DUBLADO) — gerado dinamicamente
-// Usa /stremio/torz/ com filtro de nomes PT-BR.
-// Por ser um scraper com filtro, pode demorar mais —
-// tratado igual ao dfaddon: participa da janela rápida
-// e é incluído no background com timeout estendido.
+// Não inclui stores com token vazio — isso causava erro 500.
+// O Torz é P2P direto, sem necessidade de debrid no config.
+// Os stores do usuário (rd, tb, etc) são passados via
+// parâmetro de query na URL de stream, não no config base.
 // ===============================
 function getTorzManifest() {
   const torzCfg = {
-    stores: [{ c: "p2p", t: "" }],
     filter:
       "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|sf|bioma|c76|c0ral|sigma|andrehsa|riper|sigla|eck)'"
   };
@@ -77,29 +76,34 @@ function buildUpstreamsAndStores(cfg, imdb) {
   const upstreams = [];
 
   upstreams.push({
+    name: "Brazuca",
     u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
   });
 
   if (!isAnime) {
     upstreams.push({
+      name: "Betor",
       u: "https://betor-scrap.vercel.app/manifest.json"
     });
     upstreams.push({
+      name: "DFIndexer",
       u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json"
     });
-    // Torz: scraper P2P com filtro PT-BR — comportamento similar ao dfaddon
+    // Torz: P2P com filtro PT-BR, sem stores no config
     upstreams.push({
+      name: "Torz",
       u: TORZ_MANIFEST_URL,
-      isTorz: true // flag para usar URL diferente no fetchUpstream
+      isTorz: true
     });
   }
 
   if (cfg.cometa === true) {
-    upstreams.push({ u: COMET_MANIFEST_URL });
+    upstreams.push({ name: "Comet", u: COMET_MANIFEST_URL });
   }
 
   if (cfg.torrentio === true) {
     upstreams.push({
+      name: "Torrentio",
       u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
     });
   }
@@ -162,7 +166,7 @@ app.get("/:id/manifest.json", async (req, res) => {
 app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
   try {
     const { id, type, imdb } = req.params;
-    console.log("🎬 Request:", type, imdb);
+    console.log(`\n🎬 Request: ${type} ${imdb}`);
 
     const cfg = await kv.get(`addon:${id}`);
     if (!cfg) {
@@ -175,30 +179,29 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     // ✅ CACHE HIT — retorna instantaneamente com todos os resultados
     const cached = await kv.get(cacheKey);
     if (cached) {
-      console.log("💾 CACHE HIT — resposta instantânea");
+      console.log(`💾 CACHE HIT — ${cached.streams?.length || 0} streams instantâneos`);
       return res.json(cached);
     }
 
     const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
-    console.log("📡 Upstreams:", upstreams.length, "Debrids:", stores.length);
+    console.log(`📡 Upstreams: ${upstreams.map(u => u.name).join(", ")}`);
+    console.log(`💳 Debrids: ${stores.length > 0 ? stores.map(s => s.c.toUpperCase()).join(", ") : "nenhum"}`);
 
     // ===============================
     // HELPER: busca um único upstream
     // Torz usa /stremio/torz/<config_b64>/stream/...
     // Os demais usam /stremio/wrap/<wrapper_b64>/stream/...
     // ===============================
-    const fetchUpstream = async (upstream, index, timeoutMs = 20000) => {
+    const fetchUpstream = async (upstream, timeoutMs = 20000) => {
       let url;
 
       if (upstream.isTorz) {
-        // Torz: a URL do manifest já contém o config encoded,
-        // basta substituir /manifest.json pelo path de stream
+        // Torz: substitui /manifest.json pelo path de stream
         const base = upstream.u.replace("/manifest.json", "");
         url = `${base}/stream/${type}/${imdb}.json`;
       } else {
         const wrapper = { upstreams: [{ u: upstream.u }], stores };
-        const encoded = toB64(wrapper);
-        url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
+        url = `https://stremthru.13377001.xyz/stremio/wrap/${toB64(wrapper)}/stream/${type}/${imdb}.json`;
       }
 
       const { data } = await axios.get(url, {
@@ -206,9 +209,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         headers: { "User-Agent": "DebridBR/1.0" }
       });
 
-      const streams = data.streams || [];
-      console.log(`✅ Upstream ${index + 1}${upstream.isTorz ? " [Torz]" : ""}: ${streams.length} streams`);
-      return streams;
+      return data.streams || [];
     };
 
     // ===============================
@@ -217,41 +218,42 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     // responderem a tempo são descartados desta resposta,
     // mas ainda serão buscados no background (50s).
     // ===============================
-    const FAST_TIMEOUT = 10000; // janela de 10s para acumular resultados
+    const FAST_TIMEOUT = 10000;
 
     const fastResult = await new Promise(resolve => {
       const accumulated = [];
       let finished = 0;
       const total = upstreams.length;
 
-      // Timer que fecha a janela e resolve com o que foi acumulado
       const timer = setTimeout(() => {
-        console.log(`⏱️ Janela rápida encerrada — ${accumulated.length} streams acumulados de ${finished}/${total} upstreams`);
+        const pending = upstreams
+          .filter((_, i) => i >= finished)
+          .map(u => u.name)
+          .join(", ") || "nenhum";
+        console.log(`⏱️  Janela 10s encerrada — ${accumulated.length} streams | pendentes: ${pending}`);
         resolve([...accumulated]);
       }, FAST_TIMEOUT);
 
-      upstreams.forEach((upstream, i) => {
-        fetchUpstream(upstream, i, 20000)
+      upstreams.forEach((upstream) => {
+        fetchUpstream(upstream, 20000)
           .then(streams => {
             accumulated.push(...streams);
-            console.log(`➕ Upstream ${i + 1} chegou a tempo: ${streams.length} streams (acumulado: ${accumulated.length})`);
+            console.log(`✅ [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
           })
           .catch(err => {
-            console.log(`⏰ Upstream ${i + 1} não chegou a tempo: ${err.message}`);
+            console.log(`❌ [${upstream.name}] erro: ${err.message}`);
           })
           .finally(() => {
             finished++;
-            // Se todos responderam antes do timeout, resolve imediatamente
             if (finished === total) {
               clearTimeout(timer);
-              console.log(`✅ Todos upstreams responderam antes da janela: ${accumulated.length} streams`);
+              console.log(`✅ Todos responderam antes da janela — ${accumulated.length} streams`);
               resolve([...accumulated]);
             }
           });
       });
     });
 
-    // Responde ao cliente com tudo que chegou dentro da janela
     console.log(`⚡ Resposta rápida: ${fastResult.length} streams`);
     res.json({ streams: fastResult });
 
@@ -260,33 +262,39 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     // ===============================
     const backgroundFetch = async () => {
       try {
-        console.log("🔄 Background: buscando todos os upstreams...");
+        console.log(`\n🔄 [Background] iniciando busca completa para ${imdb}...`);
 
-        const promises = upstreams.map((upstream, i) =>
-          fetchUpstream(upstream, i, 50000).catch(err => {
-            console.log(`⏰ Upstream ${i + 1} background: ERRO — ${err.message}`);
-            return [];
-          })
+        const results = await Promise.allSettled(
+          upstreams.map(upstream =>
+            fetchUpstream(upstream, 50000)
+              .then(streams => {
+                console.log(`✅ [Background][${upstream.name}] ${streams.length} streams`);
+                return streams;
+              })
+              .catch(err => {
+                console.log(`❌ [Background][${upstream.name}] erro: ${err.message}`);
+                return [];
+              })
+          )
         );
 
-        const results = await Promise.allSettled(promises);
         const allStreams = results
           .filter(r => r.status === "fulfilled")
           .flatMap(r => r.value)
           .filter(Boolean);
 
-        console.log(`📊 Background TOTAL: ${allStreams.length} streams`);
+        console.log(`📊 [Background] TOTAL: ${allStreams.length} streams`);
 
         if (allStreams.length > 0) {
           await kv.set(cacheKey, { streams: allStreams }, { ex: 1800 });
-          console.log("💾 Cache completo salvo — próxima busca será instantânea");
+          console.log(`💾 [Background] cache salvo — próxima busca será instantânea`);
         }
       } catch (err) {
-        console.error("🚨 Erro no background fetch:", err.message);
+        console.error(`🚨 [Background] erro: ${err.message}`);
       }
     };
 
-    // Dispara em background SEM await — não bloqueia a resposta
+    // Dispara em background SEM await
     backgroundFetch();
 
   } catch (err) {
@@ -309,7 +317,12 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
 
   const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
   res.json({
-    upstreams: upstreams.map((u, i) => ({ index: i + 1, url: u.u, isTorz: !!u.isTorz })),
+    upstreams: upstreams.map((u, i) => ({
+      index: i + 1,
+      name: u.name,
+      isTorz: !!u.isTorz,
+      url: u.u
+    })),
     stores: stores.map(s => s.c),
     imdb
   });
