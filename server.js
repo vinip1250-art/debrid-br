@@ -168,7 +168,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     // ESTÁGIO 1: Race — responde com o primeiro que chegar
     // com pelo menos 1 stream, ou aguarda até FAST_TIMEOUT ms
     // ===============================
-    const FAST_TIMEOUT = 10000; // 10s para aguardar o primeiro resultado
+    const FAST_TIMEOUT = 13000; // 10s para aguardar o primeiro resultado
 
     const fastResult = await Promise.race([
       // Tenta cada upstream e resolve assim que o primeiro retornar streams
@@ -199,7 +199,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         console.log("🔄 Background: buscando todos os upstreams...");
 
         const promises = upstreams.map((upstream, i) =>
-          fetchUpstream(upstream, i, 50000).catch(err => {
+          fetchUpstream(upstream, i, 80000).catch(err => {
             console.log(`⏰ Upstream ${i + 1} background: ERRO — ${err.message}`);
             return [];
           })
