@@ -32,15 +32,28 @@ function buildUpstreamsAndStores(cfg, imdb) {
   const isAnime = imdb.startsWith("kitsu:");
   const upstreams = [];
 
-  upstreams.push({ u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" });
+  upstreams.push({ 
+    name: "Brazuca", 
+    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json" 
+  });
   
   if (!isAnime) {
-    upstreams.push({ u: "https://betor-scrap.vercel.app/manifest.json" });
-    upstreams.push({ u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json" });
+    upstreams.push({ 
+      name: "Betor", 
+      u: "https://betor-scrap.vercel.app/manifest.json" 
+    });
+    upstreams.push({ 
+      name: "Dfindexer", 
+      u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json" 
+    });
   }
 
-  if (cfg.cometa === true) upstreams.push({ u: COMET_MANIFEST_URL });
+  if (cfg.cometa === true) upstreams.push({ 
+    name: "Comet", 
+    u: COMET_MANIFEST_URL 
+  });
   if (cfg.torrentio === true) upstreams.push({
+    name: "Torrentio", 
     u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
   });
 
@@ -69,9 +82,9 @@ app.get("/:id/manifest.json", async (req, res) => {
     if (!cfg) return res.status(404).json({ error: "Manifest não encontrado" });
     res.json({
       id: `brazuca-debrid-${req.params.id}`,
-      version: "3.9.2",
+      version: "3.9.3-FIX",
       name: cfg.nome || "BRDebrid Pro",
-      description: "Brazuca + Betor + Dfindexer + Comet (Fast + Background)",
+      description: "Cache Background + Dfindexer Fix",
       logo: cfg.icone || "https://brazuca-debrid.vercel.app/logo.png",
       types: ["movie", "series", "anime"],
       resources: [{ name: "stream", types: ["movie", "series"], idPrefixes: ["tt", "kitsu"] }],
@@ -85,7 +98,7 @@ app.get("/:id/manifest.json", async (req, res) => {
 });
 
 // ===============================
-async function fetchWithTimeout(upstreams, stores, type, imdb, timeoutMs) {
+async function fetchWithTimeout(upstreams, stores, type, imdb, timeoutMs, phase = "fast") {
   const promises = upstreams.map(async (upstream, i) => {
     try {
       const wrapper = { upstreams: [upstream], stores };
@@ -94,12 +107,12 @@ async function fetchWithTimeout(upstreams, stores, type, imdb, timeoutMs) {
       
       const response = await axios.get(url, { 
         timeout: timeoutMs,
-        headers: { "User-Agent": "DebridBR-Fast/1.0" }
+        headers: { "User-Agent": `DebridBR-${phase}/1.0` }
       });
       
       const count = response.data.streams?.length || 0;
       if (count > 0) {
-        console.log(`✅ ${i+1} [${timeoutMs/1000}s]: ${count} streams`);
+        console.log(`✅ ${phase} ${upstream.name || i+1} [${timeoutMs/1000}s]: ${count}`);
       }
       return response.data.streams || [];
     } catch (err) {
@@ -111,29 +124,27 @@ async function fetchWithTimeout(upstreams, stores, type, imdb, timeoutMs) {
   return results
     .filter(r => r.status === 'fulfilled')
     .flatMap(r => r.value)
-    .filter(s => s); // Remove vazios
+    .filter(s => s);
 }
 
 // ===============================
 async function fetchStreamsFast(upstreams, stores, type, imdb) {
   console.log("⚡ Busca RÁPIDA (2 fases anti-vazio)...");
   
-  // FASE 1: 12s - os MUITO rápidos
-  let streams = await fetchWithTimeout(upstreams, stores, type, imdb, 12000);
+  let streams = await fetchWithTimeout(upstreams, stores, type, imdb, 12000, "fast1");
   
-  // FASE 2: +8s se ainda vazio (total 20s)
   if (streams.length === 0) {
     console.log("🔄 Fase 2 ativada...");
-    streams = await fetchWithTimeout(upstreams, stores, type, imdb, 8000);
+    streams = await fetchWithTimeout(upstreams, stores, type, imdb, 8000, "fast2");
   }
   
-  console.log(`⚡ RÁPIDO FINAL: ${streams.length} streams`);
+  console.log(`⚡ RÁPIDO: ${streams.length} streams`);
   return streams;
 }
 
 // ===============================
 async function fetchStreamsComplete(upstreams, stores, type, imdb) {
-  console.log("⏳ Background COMPLETO (45s máx)...");
+  console.log("⏳ Background COMPLETO (60s máx)...");
   
   const promises = upstreams.map(async (upstream, i) => {
     try {
@@ -141,11 +152,13 @@ async function fetchStreamsComplete(upstreams, stores, type, imdb) {
       const encoded = Buffer.from(JSON.stringify(wrapper)).toString("base64");
       const url = `https://stremthru.13377001.xyz/stremio/wrap/${encoded}/stream/${type}/${imdb}.json`;
       
-      const { data } = await axios.get(url, { timeout: 40000 });
+      // 60s pro Dfindexer!
+      const { data } = await axios.get(url, { timeout: 60000 });
       const count = data.streams?.length || 0;
-      if (count > 0) console.log(`✅ Bg ${i+1}: ${count} streams`);
+      console.log(`✅ Bg ${upstream.name || i+1}: ${count} streams`);
       return data.streams || [];
-    } catch {
+    } catch (err) {
+      console.log(`⚠️ Bg ${upstream.name || i+1}: timeout`);
       return [];
     }
   });
@@ -167,22 +180,22 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     const cacheKey = `cache:${id}:${type}:${imdb}`;
     const cached = await kv.get(cacheKey);
     if (cached) {
-      console.log("💾 CACHE HIT completo!");
+      console.log("💾 CACHE HIT:", cached.streams.length, "streams");
       return res.json(cached);
     }
 
     const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
     console.log(`🎬 ${type}/${imdb} → ${upstreams.length} upstreams`);
 
-    // 🚀 RESPOSTA RÁPIDA GARANTIDA (nunca vazio!)
+    // 🚀 RESPOSTA RÁPIDA
     const fastStreams = await fetchStreamsFast(upstreams, stores, type, imdb);
     const response = { streams: fastStreams };
 
-    // 🔥 BACKGROUND: Cache mais completo
+    // 🔥 BACKGROUND CACHE (SEMPRE salva!)
     (async () => {
       try {
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Bg timeout')), 50000)
+          setTimeout(() => reject(new Error('Bg timeout')), 65000)
         );
         
         const completeResponse = await Promise.race([
@@ -190,16 +203,17 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
           timeoutPromise
         ]);
         
-        if (completeResponse.streams.length > fastStreams.length) {
-          await kv.set(cacheKey, completeResponse, { ex: 1800 });
-          console.log("🔥 Cache ATUALIZADO!");
-        }
-      } catch {
-        console.log("⏰ Background timeout");
+        // ✅ SEMPRE salva (mesmo se pior)
+        await kv.set(cacheKey, completeResponse);
+        await kv.expire(cacheKey, 1800); // 30min separado!
+        console.log("💾 Cache SALVO (Dfindexer incluso)");
+        
+      } catch (err) {
+        console.log("⏰ Background timeout - sem cache completo");
       }
     })();
 
-    console.log(`📤 Enviando: ${fastStreams.length} streams`);
+    console.log(`📤 Enviando rápido: ${fastStreams.length} streams`);
     res.json(response);
 
   } catch (err) {
@@ -220,10 +234,10 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   
   const { upstreams } = buildUpstreamsAndStores(cfg, imdb);
   res.json({ 
-    upstreams: upstreams.length, 
+    upstreams: upstreams.map(u => u.name), 
+    count: upstreams.length,
     imdb, 
-    type,
-    timestamp: new Date().toISOString()
+    type
   });
 });
 
