@@ -63,8 +63,7 @@ function getTorzUrl(stores, type, imdb) {
     filter:
       "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|sf|bioma|c76|c0ral|sigma|andrehsa|riper|sigla|eck)'"
   };
-  const encoded = toB64Raw(torzCfg);
-  return `https://stremthru.13377001.xyz/stremio/torz/${encoded}/stream/${type}/${imdb}.json`;
+  return `https://stremthru.13377001.xyz/stremio/torz/${toB64Raw(torzCfg)}/stream/${type}/${imdb}.json`;
 }
 
 // ===============================
@@ -186,18 +185,15 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     console.log(`💳 Debrids: ${stores.length > 0 ? stores.map(s => s.c.toUpperCase()).join(", ") : "nenhum"}`);
 
     // ===============================
-    // HELPER: busca um único upstream
-    //
+    // HELPER: busca um upstream com timeout próprio
+    // Retorna [] em caso de erro — nunca lança exceção
     // Torz  → URL gerada dinamicamente com stores do usuário embutidos
-    //         ex: /stremio/torz/<base64(stores+filter)>/stream/...
-    //
-    // Demais → /stremio/wrap/<base64(upstreams+stores)>/stream/...
+    // Demais → /stremio/wrap/<base64>/stream/...
     // ===============================
-    const fetchUpstream = async (upstream, timeoutMs = 20000) => {
+    const fetchUpstream = async (upstream, timeoutMs) => {
       let url;
 
       if (upstream.isTorz) {
-        // Gera URL com os stores do usuário embutidos no config
         url = getTorzUrl(stores, type, imdb);
       } else {
         const wrapper = { upstreams: [{ u: upstream.u }], stores };
@@ -211,49 +207,56 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         });
         return data.streams || [];
       } catch (err) {
-        // Loga detalhes do erro HTTP para facilitar debug
         if (err.response) {
           console.log(`🔍 [${upstream.name}] HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
           console.log(`🔍 [${upstream.name}] URL: ${url}`);
         }
-        throw err;
+        // Sempre retorna [] — nunca bloqueia os outros
+        return [];
       }
     };
 
     // ===============================
-    // ESTÁGIO 1: Janela de 10s — acumula todos os upstreams
-    // que responderem dentro do prazo. Upstreams que não
-    // responderem a tempo são descartados desta resposta,
-    // mas ainda serão buscados no background (50s).
+    // ESTÁGIO 1: cada upstream tem seu próprio timeout de 9s.
+    // A janela global de 10s é apenas um safety net.
+    // Todos rodam em paralelo e independentemente —
+    // erro ou timeout de um nunca afeta os demais.
     // ===============================
-    const FAST_TIMEOUT = 10000;
+    const FAST_TIMEOUT   = 10000; // safety net global
+    const FAST_PER_ADDON =  9000; // timeout individual por addon
 
     const fastResult = await new Promise(resolve => {
       const accumulated = [];
       let finished = 0;
       const total = upstreams.length;
+      let resolved = false;
 
-      const timer = setTimeout(() => {
-        const names = upstreams.slice(finished).map(u => u.name).join(", ");
-        console.log(`⏱️  Janela 10s encerrada — ${accumulated.length} streams | pendentes: ${names || "nenhum"}`);
+      const tryResolve = (reason) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(globalTimer);
+        console.log(`⏱️  Janela encerrada [${reason}] — ${accumulated.length} streams de ${finished}/${total} upstreams`);
         resolve([...accumulated]);
-      }, FAST_TIMEOUT);
+      };
+
+      // Safety net: encerra tudo após 10s no máximo
+      const globalTimer = setTimeout(() => tryResolve("timeout global 10s"), FAST_TIMEOUT);
 
       upstreams.forEach((upstream) => {
-        fetchUpstream(upstream, 20000)
+        // Cada addon tem 9s independente — erro/timeout não bloqueia os outros
+        fetchUpstream(upstream, FAST_PER_ADDON)
           .then(streams => {
-            accumulated.push(...streams);
-            console.log(`✅ [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
-          })
-          .catch(err => {
-            console.log(`❌ [${upstream.name}] erro: ${err.message}`);
+            if (streams.length > 0) {
+              accumulated.push(...streams);
+              console.log(`✅ [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
+            } else {
+              console.log(`⚪ [${upstream.name}] 0 streams`);
+            }
           })
           .finally(() => {
             finished++;
             if (finished === total) {
-              clearTimeout(timer);
-              console.log(`✅ Todos responderam antes da janela — ${accumulated.length} streams`);
-              resolve([...accumulated]);
+              tryResolve("todos concluídos");
             }
           });
       });
@@ -263,7 +266,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     res.json({ streams: fastResult });
 
     // ===============================
-    // ESTÁGIO 2: Background — busca TODOS e salva no cache
+    // ESTÁGIO 2: Background — busca TODOS com 50s e salva cache
     // ===============================
     const backgroundFetch = async () => {
       try {
@@ -273,12 +276,12 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
           upstreams.map(upstream =>
             fetchUpstream(upstream, 50000)
               .then(streams => {
-                console.log(`✅ [Background][${upstream.name}] ${streams.length} streams`);
+                if (streams.length > 0) {
+                  console.log(`✅ [Background][${upstream.name}] ${streams.length} streams`);
+                } else {
+                  console.log(`⚪ [Background][${upstream.name}] 0 streams`);
+                }
                 return streams;
-              })
-              .catch(err => {
-                console.log(`❌ [Background][${upstream.name}] erro: ${err.message}`);
-                return [];
               })
           )
         );
@@ -321,8 +324,6 @@ app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   if (!cfg) return res.json({ error: "CFG não encontrada" });
 
   const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
-
-  // Mostra a URL real que o Torz usaria
   const torzUrl = getTorzUrl(stores, type, imdb);
 
   res.json({
