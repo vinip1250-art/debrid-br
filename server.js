@@ -165,29 +165,46 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
     };
 
     // ===============================
-    // ESTÁGIO 1: Race — responde com o primeiro que chegar
-    // com pelo menos 1 stream, ou aguarda até FAST_TIMEOUT ms
+    // ESTÁGIO 1: Janela de 10s — acumula todos os upstreams
+    // que responderem dentro do prazo. Upstreams que não
+    // responderem a tempo são descartados desta resposta,
+    // mas ainda serão buscados no background (50s).
     // ===============================
-    const FAST_TIMEOUT = 13000; // 10s para aguardar o primeiro resultado
+    const FAST_TIMEOUT = 10000; // janela de 10s para acumular resultados
 
-    const fastResult = await Promise.race([
-      // Tenta cada upstream e resolve assim que o primeiro retornar streams
-      (async () => {
-        const settled = await Promise.race(
-          upstreams.map((upstream, i) =>
-            fetchUpstream(upstream, i)
-              .then(streams => (streams.length > 0 ? streams : new Promise(() => {}))) // ignora vazios
-              .catch(() => new Promise(() => {})) // ignora erros
-          )
-        );
-        return settled;
-      })(),
+    const fastResult = await new Promise(resolve => {
+      const accumulated = [];
+      let finished = 0;
+      const total = upstreams.length;
 
-      // Fallback: se nenhum responder rápido, retorna vazio após FAST_TIMEOUT
-      new Promise(resolve => setTimeout(() => resolve([]), FAST_TIMEOUT))
-    ]);
+      // Timer que fecha a janela e resolve com o que foi acumulado
+      const timer = setTimeout(() => {
+        console.log(`⏱️ Janela rápida encerrada — ${accumulated.length} streams acumulados de ${finished}/${total} upstreams`);
+        resolve([...accumulated]);
+      }, FAST_TIMEOUT);
 
-    // Responde ao cliente com o resultado rápido
+      upstreams.forEach((upstream, i) => {
+        fetchUpstream(upstream, i, 20000)
+          .then(streams => {
+            accumulated.push(...streams);
+            console.log(`➕ Upstream ${i + 1} chegou a tempo: ${streams.length} streams (acumulado: ${accumulated.length})`);
+          })
+          .catch(err => {
+            console.log(`⏰ Upstream ${i + 1} não chegou a tempo: ${err.message}`);
+          })
+          .finally(() => {
+            finished++;
+            // Se todos responderam antes do timeout, resolve imediatamente
+            if (finished === total) {
+              clearTimeout(timer);
+              console.log(`✅ Todos upstreams responderam antes da janela: ${accumulated.length} streams`);
+              resolve([...accumulated]);
+            }
+          });
+      });
+    });
+
+    // Responde ao cliente com tudo que chegou dentro da janela
     console.log(`⚡ Resposta rápida: ${fastResult.length} streams`);
     res.json({ streams: fastResult });
 
@@ -199,7 +216,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         console.log("🔄 Background: buscando todos os upstreams...");
 
         const promises = upstreams.map((upstream, i) =>
-          fetchUpstream(upstream, i, 80000).catch(err => {
+          fetchUpstream(upstream, i, 50000).catch(err => {
             console.log(`⏰ Upstream ${i + 1} background: ERRO — ${err.message}`);
             return [];
           })
