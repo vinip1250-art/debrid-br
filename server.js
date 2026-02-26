@@ -61,7 +61,7 @@ function getTorzUrl(stores, type, imdb) {
   const torzCfg = {
     stores,
     filter:
-      "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|brremux|cza|Freddiegellar|sgf|capybara|amigosshare|asc|dual-bioma|dual-c76|dual-fly|dual-tossato|dual-7sprit7|dual-c.a.a|c0ral|cbr|Dual-Nogroup|pia|xor|g4ris|hidratorrents|sigma|andrehsa|riper|sigla|tontom|eck)'"
+      "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|brremux|cza|freddiegellar|sgf|asc|dual-bioma|dual-c76|fly|tossato|7sprit7|c.a.a|c0ral|cbr|dual-nogroup|pia|xor|g4ris|sigma|andrehsa|riper|sigla|tontom|eck)'"
   };
   return `https://stremthru.13377001.xyz/stremio/torz/${toB64Raw(torzCfg)}/stream/${type}/${imdb}.json`;
 }
