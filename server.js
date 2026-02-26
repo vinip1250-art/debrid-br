@@ -85,7 +85,7 @@ function buildUpstreamsAndStores(cfg, imdb) {
     });
     upstreams.push({
       name: "DFIndexer",
-      u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIzIiwiOCJdLCJtYXhfcmVzdWx0cyI6IjUifQ/manifest.json"
+      u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyIyIl0sIm1heF9yZXN1bHRzIjoiNSJ9/manifest.json"
     });
     // Torz: isTorz=true — URL de stream gerada dinamicamente com stores
     upstreams.push({
