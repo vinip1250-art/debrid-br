@@ -8,7 +8,7 @@ app.use(cors());
 app.use(express.json());
 
 // ===============================
-// CONFIGURAÇÃO DO REDIS
+// CONFIGURAÃ‡ÃƒO DO REDIS
 // ===============================
 const kv = new Redis({
   url: process.env.KV_REST_API_URL,
@@ -22,7 +22,6 @@ function toB64(obj) {
   return Buffer.from(JSON.stringify(obj)).toString("base64");
 }
 
-// URL-safe base64 sem padding — necessário para URLs do Torz
 function toB64Raw(obj) {
   return Buffer.from(JSON.stringify(obj))
     .toString("base64")
@@ -32,7 +31,38 @@ function toB64Raw(obj) {
 }
 
 // ===============================
-// COMET — gerado dinamicamente (sem tokens, ok ser global)
+// DEDUPLICAÃ‡ÃƒO DE STREAMS
+// Remove streams duplicados entre addons usando infoHash ou url como chave.
+// ===============================
+function dedupeStreams(streams) {
+  if (!Array.isArray(streams)) return [];
+
+  const seen = new Set();
+  const result = [];
+
+  for (const s of streams) {
+    const key =
+      s.infoHash ||
+      s.url ||
+      (s.title && s.behaviorHints?.filename
+        ? `${s.title}|${s.behaviorHints.filename}`
+        : null);
+
+    if (!key) {
+      result.push(s);
+      continue;
+    }
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(s);
+  }
+
+  return result;
+}
+
+// ===============================
+// COMET â€” gerado dinamicamente
 // ===============================
 function getCometManifest() {
   const cometCfg = {
@@ -53,9 +83,7 @@ function getCometManifest() {
 const COMET_MANIFEST_URL = getCometManifest();
 
 // ===============================
-// TORZ — gerado por request com os stores do usuário
-// O Torz embute tudo no config da URL (stores + filter),
-// diferente do wrap que recebe stores separadamente.
+// TORZ â€” gerado por request com os stores do usuÃ¡rio
 // ===============================
 function getTorzUrl(stores, type, imdb) {
   const torzCfg = {
@@ -67,7 +95,7 @@ function getTorzUrl(stores, type, imdb) {
 }
 
 // ===============================
-// FUNÇÃO AUXILIAR (DRY)
+// FUNÃ‡ÃƒO AUXILIAR (DRY)
 // ===============================
 function buildUpstreamsAndStores(cfg, imdb) {
   const isAnime = imdb.startsWith("kitsu:");
@@ -87,7 +115,6 @@ function buildUpstreamsAndStores(cfg, imdb) {
       name: "DFIndexer",
       u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyI4Il0sIm1heF9yZXN1bHRzIjoiNSJ9/manifest.json"
     });
-    // Torz: isTorz=true — URL de stream gerada dinamicamente com stores
     upstreams.push({
       name: "Torz",
       isTorz: true
@@ -111,6 +138,7 @@ function buildUpstreamsAndStores(cfg, imdb) {
   if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
   if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
   if (cfg.alldebrid)   stores.push({ c: "ad", t: cfg.alldebrid });
+  if (cfg.offcloud)    stores.push({ c: "oc", t: cfg.offcloud }); // âœ… Offcloud
 
   return { isAnime, upstreams, stores };
 }
@@ -121,7 +149,7 @@ function buildUpstreamsAndStores(cfg, imdb) {
 app.post("/gerar", async (req, res) => {
   const id = Math.random().toString(36).substring(2, 10);
   await kv.set(`addon:${id}`, req.body);
-  console.log("🧩 CFG criada:", id);
+  console.log("ðŸ§© CFG criada:", id);
   res.json({ id });
 });
 
@@ -131,13 +159,13 @@ app.post("/gerar", async (req, res) => {
 app.get("/:id/manifest.json", async (req, res) => {
   try {
     const cfg = await kv.get(`addon:${req.params.id}`);
-    if (!cfg) return res.status(404).json({ error: "Manifest não encontrado" });
+    if (!cfg) return res.status(404).json({ error: "Manifest nÃ£o encontrado" });
 
     res.json({
       id: `brazuca-debrid-${req.params.id}`,
-      version: "3.9.0",
+      version: "4.2.0",
       name: cfg.nome || "BRDebrid",
-      description: "Brazuca + Betor + Torrentio + Comet",
+      description: "Brazuca + Betor + DFIndexer + Torz + Comet + Torrentio",
       logo: cfg.icone || "https://brazuca-debrid.vercel.app/logo.png",
       types: ["movie", "series", "anime"],
       resources: [{
@@ -158,37 +186,33 @@ app.get("/:id/manifest.json", async (req, res) => {
 });
 
 // ===============================
-// STREAM COM RESPOSTA RÁPIDA + CACHE EM BACKGROUND
+// STREAM COM RESPOSTA RÃPIDA + CACHE EM BACKGROUND
 // ===============================
 app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
   try {
     const { id, type, imdb } = req.params;
-    console.log(`\n🎬 Request: ${type} ${imdb}`);
+    console.log(`\nðŸŽ¬ Request: ${type} ${imdb}`);
 
     const cfg = await kv.get(`addon:${id}`);
     if (!cfg) {
-      console.log("❌ CFG não encontrada");
+      console.log("âŒ CFG nÃ£o encontrada");
       return res.json({ streams: [] });
     }
 
     const cacheKey = `cache:${id}:${type}:${imdb}`;
 
-    // CACHE HIT — retorna instantaneamente com todos os resultados
     const cached = await kv.get(cacheKey);
     if (cached) {
-      console.log(`💾 CACHE HIT — ${cached.streams?.length || 0} streams instantâneos`);
+      console.log(`ðŸ’¾ CACHE HIT â€” ${cached.streams?.length || 0} streams instantÃ¢neos`);
       return res.json(cached);
     }
 
     const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
-    console.log(`📡 Upstreams: ${upstreams.map(u => u.name).join(", ")}`);
-    console.log(`💳 Debrids: ${stores.length > 0 ? stores.map(s => s.c.toUpperCase()).join(", ") : "nenhum"}`);
+    console.log(`ðŸ“¡ Upstreams: ${upstreams.map(u => u.name).join(", ")}`);
+    console.log(`ðŸ’³ Debrids: ${stores.length > 0 ? stores.map(s => s.c.toUpperCase()).join(", ") : "nenhum"}`);
 
     // ===============================
-    // HELPER: busca um upstream com timeout próprio
-    // Retorna [] em caso de erro — nunca lança exceção
-    // Torz  → URL gerada dinamicamente com stores do usuário embutidos
-    // Demais → /stremio/wrap/<base64>/stream/...
+    // HELPER: busca um upstream com timeout prÃ³prio
     // ===============================
     const fetchUpstream = async (upstream, timeoutMs) => {
       let url;
@@ -208,22 +232,18 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         return data.streams || [];
       } catch (err) {
         if (err.response) {
-          console.log(`🔍 [${upstream.name}] HTTP ${err.response.status} — ${JSON.stringify(err.response.data)}`);
-          console.log(`🔍 [${upstream.name}] URL: ${url}`);
+          console.log(`ðŸ” [${upstream.name}] HTTP ${err.response.status} â€” ${JSON.stringify(err.response.data)}`);
+          console.log(`ðŸ” [${upstream.name}] URL: ${url}`);
         }
-        // Sempre retorna [] — nunca bloqueia os outros
         return [];
       }
     };
 
     // ===============================
-    // ESTÁGIO 1: cada upstream tem seu próprio timeout de 9s.
-    // A janela global de 10s é apenas um safety net.
-    // Todos rodam em paralelo e independentemente —
-    // erro ou timeout de um nunca afeta os demais.
+    // ESTÃGIO 1: Resposta rÃ¡pida (todos paralelos, 13s max)
     // ===============================
-    const FAST_TIMEOUT   = 13000; // safety net global
-    const FAST_PER_ADDON =  12000; // timeout individual por addon
+    const FAST_TIMEOUT   = 13000;
+    const FAST_PER_ADDON = 12000;
 
     const fastResult = await new Promise(resolve => {
       const accumulated = [];
@@ -235,51 +255,50 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         if (resolved) return;
         resolved = true;
         clearTimeout(globalTimer);
-        console.log(`⏱️  Janela encerrada [${reason}] — ${accumulated.length} streams de ${finished}/${total} upstreams`);
+        console.log(`â±ï¸  Janela encerrada [${reason}] â€” ${accumulated.length} streams de ${finished}/${total} upstreams`);
         resolve([...accumulated]);
       };
 
-      // Safety net: encerra tudo após 10s no máximo
-      const globalTimer = setTimeout(() => tryResolve("timeout global 10s"), FAST_TIMEOUT);
+      const globalTimer = setTimeout(() => tryResolve("timeout global 13s"), FAST_TIMEOUT);
 
       upstreams.forEach((upstream) => {
-        // Cada addon tem 9s independente — erro/timeout não bloqueia os outros
         fetchUpstream(upstream, FAST_PER_ADDON)
           .then(streams => {
             if (streams.length > 0) {
               accumulated.push(...streams);
-              console.log(`✅ [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
+              console.log(`âœ… [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
             } else {
-              console.log(`⚪ [${upstream.name}] 0 streams`);
+              console.log(`âšª [${upstream.name}] 0 streams`);
             }
           })
           .finally(() => {
             finished++;
-            if (finished === total) {
-              tryResolve("todos concluídos");
-            }
+            if (finished === total) tryResolve("todos concluÃ­dos");
           });
       });
     });
 
-    console.log(`⚡ Resposta rápida: ${fastResult.length} streams`);
-    res.json({ streams: fastResult });
+    // âœ… DeduplicaÃ§Ã£o na resposta rÃ¡pida
+    const fastDeduped = dedupeStreams(fastResult);
+    console.log(`âš¡ Resposta rÃ¡pida: ${fastResult.length} streams â†’ ${fastDeduped.length} apÃ³s dedup`);
+
+    res.json({ streams: fastDeduped });
 
     // ===============================
-    // ESTÁGIO 2: Background — busca TODOS com 50s e salva cache
+    // ESTÃGIO 2: Background â€” salva cache completo com dedup
     // ===============================
     const backgroundFetch = async () => {
       try {
-        console.log(`\n🔄 [Background] iniciando para ${imdb}...`);
+        console.log(`\nðŸ”„ [Background] iniciando para ${imdb}...`);
 
         const results = await Promise.allSettled(
           upstreams.map(upstream =>
             fetchUpstream(upstream, 50000)
               .then(streams => {
                 if (streams.length > 0) {
-                  console.log(`✅ [Background][${upstream.name}] ${streams.length} streams`);
+                  console.log(`âœ… [Background][${upstream.name}] ${streams.length} streams`);
                 } else {
-                  console.log(`⚪ [Background][${upstream.name}] 0 streams`);
+                  console.log(`âšª [Background][${upstream.name}] 0 streams`);
                 }
                 return streams;
               })
@@ -291,22 +310,23 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
           .flatMap(r => r.value)
           .filter(Boolean);
 
-        console.log(`📊 [Background] TOTAL: ${allStreams.length} streams`);
+        // âœ… DeduplicaÃ§Ã£o no cache background
+        const allDeduped = dedupeStreams(allStreams);
+        console.log(`ðŸ“Š [Background] ${allStreams.length} streams â†’ ${allDeduped.length} apÃ³s dedup`);
 
-        if (allStreams.length > 0) {
-          await kv.set(cacheKey, { streams: allStreams }, { ex: 1800 });
-          console.log(`💾 [Background] cache salvo — próxima busca será instantânea`);
+        if (allDeduped.length > 0) {
+          await kv.set(cacheKey, { streams: allDeduped }, { ex: 1800 });
+          console.log(`ðŸ’¾ [Background] cache salvo â€” prÃ³xima busca serÃ¡ instantÃ¢nea`);
         }
       } catch (err) {
-        console.error(`🚨 [Background] erro: ${err.message}`);
+        console.error(`ðŸš¨ [Background] erro: ${err.message}`);
       }
     };
 
-    // Dispara em background SEM await
     backgroundFetch();
 
   } catch (err) {
-    console.error("🚨 ERRO 500:", err.message);
+    console.error("ðŸš¨ ERRO 500:", err.message);
     res.status(500).json({ streams: [], error: "Erro interno" });
   }
 });
@@ -316,12 +336,12 @@ app.get("/:id/stream/:type/:imdb", (req, res) => {
 });
 
 // ===============================
-// DEBUG SIMPLES
+// DEBUG
 // ===============================
 app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   const { id, type, imdb } = req.params;
   const cfg = await kv.get(`addon:${id}`);
-  if (!cfg) return res.json({ error: "CFG não encontrada" });
+  if (!cfg) return res.json({ error: "CFG nÃ£o encontrada" });
 
   const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
   const torzUrl = getTorzUrl(stores, type, imdb);
