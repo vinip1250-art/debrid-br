@@ -1,243 +1,368 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<title>BR Debrid</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+const express = require("express");
+const cors = require("cors");
+const axios = require("axios");
+const { Redis } = require("@upstash/redis");
 
-<style>
-:root{
---bg:#050816;--card:#111827;--text:#e5e7eb;
---input:#020617;--border:#374151;--accent:#2563eb;
---warn-bg:#7f1d1d;--warn:#fecaca;
-}
-.light{
---bg:#f3f4f6;--card:#fff;--text:#111827;
---input:#f9fafb;--border:#d1d5db;
---warn-bg:#fee2e2;--warn:#7f1d1d;
-}
-body{
-margin:0;min-height:100vh;
-display:flex;align-items:center;justify-content:center;
-background:var(--bg);color:var(--text);
-font-family:system-ui,sans-serif;
-}
-.card{
-width:100%;max-width:520px;
-background:var(--card);
-padding:22px;border-radius:14px;
-box-shadow:0 0 30px #0006;
-}
-h1{text-align:center;margin:0}
-.subtitle{text-align:center;font-size:.9rem;opacity:.75;margin-bottom:10px}
-.small{font-size:.75rem;opacity:.7;text-align:center}
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-label{font-size:.85rem;margin-top:12px;display:block}
-input,select{
-width:100%;padding:10px;
-border-radius:8px;border:1px solid var(--border);
-background:var(--input);color:var(--text);
-}
-select{min-height:120px}
-
-.toggle{
-display:flex;justify-content:flex-end;gap:6px;
-margin-bottom:6px;
-}
-.toggle button{width:auto;padding:6px 10px;font-size:.75rem}
-
-.check-inline{
-display:flex;
-justify-content:space-between;
-align-items:center;
-gap:16px;
-margin-top:10px;
-}
-
-.check-item{
-display:flex;
-align-items:center;
-gap:6px;
-font-size:.85rem;
-white-space:nowrap;
-}
-
-button{
-width:100%;padding:10px;
-border:none;border-radius:8px;
-background:var(--accent);color:#fff;
-font-weight:600;cursor:pointer;
-margin-top:12px;
-}
-button:disabled{opacity:.5}
-
-.warn{
-display:none;margin-top:10px;
-background:var(--warn-bg);
-color:var(--warn);
-padding:8px;border-radius:8px;
-font-size:.8rem;
-}
-
-.box{
-margin-top:10px;
-background:var(--input);
-border:1px solid var(--border);
-padding:10px;border-radius:8px;
-}
-
-.ref-buttons{
-display:flex;
-flex-direction:column;
-gap:6px;
-margin-top:8px;
-}
-
-.ref-buttons button{
-background:#1f2937;
-}
-
-.link{font-size:.8rem;word-break:break-word}
-</style>
-</head>
-
-<body>
-<div class="card">
-
-<div class="toggle">
-<button onclick="toggleTheme()">🌗</button>
-<button onclick="toggleLang()">PT/EN</button>
-</div>
-
-<h1>BR Debrid</h1>
-<div class="subtitle" id="subtitle">
-Stremio • Conteúdo Dublado • Debrid
-</div>
-
-<p class="small" id="legal">
-Este addon apenas organiza resultados públicos.
-O uso de serviços de terceiros é responsabilidade do usuário.
-</p>
-
-<label id="lblName">Nome do Addon</label>
-<input id="nome" value="BR Debrid">
-
-<label id="lblIcon">Ícone (URL)</label>
-<input id="icone" value="https://brazuca-debrid.vercel.app/logo.png">
-
-<div class="check-inline">
-  <div class="check-item">
-    <input type="checkbox" id="comet" checked>
-    <label for="comet" id="lblComet">Comet (prioriza cache)</label>
-  </div>
-
-  <div class="check-item">
-    <input type="checkbox" id="torrentio" checked>
-    <label for="torrentio" id="lblTorrentio">Torrentio</label>
-  </div>
-</div>
-
-<label id="lblDebrid">Escolha até 2 Debrids</label>
-<select id="debrids" multiple>
-<option value="torbox">🔵 TorBox</option>
-<option value="realdebrid">🟡 Real-Debrid</option>
-<option value="premiumize">🟣 Premiumize</option>
-<option value="debridlink">🟢 Debrid-Link</option>
-<option value="alldebrid">🔴 AllDebrid</option>
-</select>
-
-<div class="ref-buttons">
-  <button onclick="window.open('https://torbox.app/subscription?referral=b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96','_blank')">
-    🔵 TorBox — 7 dias grátis
-  </button>
-
-  <button onclick="copiarTorbox()">
-    📋 Copiar código TorBox
-  </button>
-
-  <button onclick="window.open('https://real-debrid.com/?id=6684575','_blank')">
-    🟡 Criar conta Real-Debrid
-  </button>
-</div>
-
-<div class="warn" id="warnLimit">Máximo 2 serviços.</div>
-
-<div id="fields"></div>
-<div class="warn" id="warnApi">Informe ao menos uma API válida.</div>
-
-<button id="btn" onclick="gerar()" disabled>Gerar Configuração</button>
-
-<div class="box link" id="result">O link do addon aparecerá aqui.</div>
-<button id="copy" onclick="copiar()" style="display:none">Copiar Link</button>
-
-</div>
-
-<script>
-let lang="pt",ultimo="";
-const TORBOX_REF="b08bcd10-8df2-44c9-a0ba-4d5bdb62ef96";
-
-function copiarTorbox(){
-navigator.clipboard.writeText(TORBOX_REF);
-alert("Código TorBox copiado!");
-}
-
-function toggleLang(){lang=lang==="pt"?"en":"pt"}
-function toggleTheme(){document.body.classList.toggle("light")}
-
-debrids.addEventListener("change",()=>{
-const sel=[...debrids.selectedOptions].map(o=>o.value);
-if(sel.length>2){
-warnLimit.style.display="block";
-debrids.selectedIndex=-1;
-fields.innerHTML="";
-validar();return;
-}
-warnLimit.style.display="none";
-fields.innerHTML="";
-sel.forEach(s=>{
-fields.innerHTML+=`
-<div class="box">
-<label>${s} API Key</label>
-<input id="${s}" placeholder="Cole sua API key">
-</div>`;
-});
-sel.forEach(s=>{
-document.getElementById(s).addEventListener("input",validar);
-});
-validar();
+// ===============================
+// CONFIGURAÃ‡ÃƒO DO REDIS
+// ===============================
+const kv = new Redis({
+  url: process.env.KV_REST_API_URL,
+  token: process.env.KV_REST_API_TOKEN
 });
 
-function validar(){
-const sel=[...debrids.selectedOptions].map(o=>o.value);
-const ok=sel.some(s=>document.getElementById(s)?.value.length>=10);
-btn.disabled=!ok;
-warnApi.style.display=ok?"none":"block";
+// ===============================
+// HELPERS DE ENCODING
+// ===============================
+function toB64(obj) {
+  return Buffer.from(JSON.stringify(obj)).toString("base64");
 }
 
-async function gerar(){
-btn.disabled=true;btn.innerText="Gerando...";
-const sel=[...debrids.selectedOptions].map(o=>o.value);
-const cfg={
-nome:nome.value,
-icone:icone.value,
-debrids:sel,
-cometa:comet.checked,
-torrentio:torrentio.checked
-};
-sel.forEach(s=>cfg[s]=document.getElementById(s).value.trim());
-const r=await fetch("/gerar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cfg)});
-const d=await r.json();
-ultimo=location.origin+"/"+d.id+"/manifest.json";
-result.innerText=ultimo;
-copy.style.display="block";
-btn.innerText="Gerar Configuração";
-btn.disabled=false;
+function toB64Raw(obj) {
+  return Buffer.from(JSON.stringify(obj))
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
-function copiar(){
-navigator.clipboard.writeText(ultimo);
-alert("Link copiado!");
+// ===============================
+// DEDUPLICAÃ‡ÃƒO DE STREAMS
+// Remove streams duplicados entre addons usando infoHash ou url como chave.
+// ===============================
+function dedupeStreams(streams) {
+  if (!Array.isArray(streams)) return [];
+
+  const seen = new Set();
+  const result = [];
+
+  for (const s of streams) {
+    const key =
+      s.infoHash ||
+      s.url ||
+      (s.title && s.behaviorHints?.filename
+        ? `${s.title}|${s.behaviorHints.filename}`
+        : null);
+
+    if (!key) {
+      result.push(s);
+      continue;
+    }
+
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(s);
+  }
+
+  return result;
 }
-</script>
-</body>
-</html>
+
+// ===============================
+// COMET â€” gerado dinamicamente
+// ===============================
+function getCometManifest() {
+  const cometCfg = {
+    maxResultsPerResolution: 0,
+    maxSize: 0,
+    cachedOnly: false,
+    removeTrash: true,
+    deduplicateStreams: true,
+    enableTorrent: true,
+    languages: {
+      required: ["pt"],
+      preferred: ["pt"]
+    }
+  };
+  return `https://comet.feels.legal/${toB64(cometCfg)}/manifest.json`;
+}
+
+const COMET_MANIFEST_URL = getCometManifest();
+
+// ===============================
+// TORZ â€” gerado por request com os stores do usuÃ¡rio
+// ===============================
+function getTorzUrl(stores, type, imdb) {
+  const torzCfg = {
+    stores,
+    filter:
+      "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|brremux|cza|freddiegellar|sgf|asc|dual-bioma|dual-c76|fly|tossato|7sprit7|c.a.a|c0ral|cbr|dual-nogroup|pia|xor|g4ris|sigma|andrehsa|riper|sigla|tontom|eck)'"
+  };
+  return `https://stremthru.13377001.xyz/stremio/torz/${toB64Raw(torzCfg)}/stream/${type}/${imdb}.json`;
+}
+
+// ===============================
+// FUNÃ‡ÃƒO AUXILIAR (DRY)
+// ===============================
+function buildUpstreamsAndStores(cfg, imdb) {
+  const isAnime = imdb.startsWith("kitsu:");
+  const upstreams = [];
+
+  upstreams.push({
+    name: "Brazuca",
+    u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
+  });
+
+  if (!isAnime) {
+    upstreams.push({
+      name: "Betor",
+      u: "https://betor-scrap.vercel.app/manifest.json"
+    });
+    upstreams.push({
+      name: "DFIndexer",
+      u: "https://dfaddon.vercel.app/eyJzY3JhcGVycyI6WyI4Il0sIm1heF9yZXN1bHRzIjoiNSJ9/manifest.json"
+    });
+    upstreams.push({
+      name: "Torz",
+      isTorz: true
+    });
+  }
+
+  if (cfg.cometa === true) {
+    upstreams.push({ name: "Comet", u: COMET_MANIFEST_URL });
+  }
+
+  if (cfg.torrentio === true) {
+    upstreams.push({
+      name: "Torrentio",
+      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
+    });
+  }
+
+  const stores = [];
+  if (cfg.realdebrid)  stores.push({ c: "rd", t: cfg.realdebrid });
+  if (cfg.torbox)      stores.push({ c: "tb", t: cfg.torbox });
+  if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
+  if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
+  if (cfg.alldebrid)   stores.push({ c: "ad", t: cfg.alldebrid });
+  if (cfg.offcloud)    stores.push({ c: "oc", t: cfg.offcloud }); // âœ… Offcloud
+
+  return { isAnime, upstreams, stores };
+}
+
+// ===============================
+// ROTA GERAR
+// ===============================
+app.post("/gerar", async (req, res) => {
+  const id = Math.random().toString(36).substring(2, 10);
+  await kv.set(`addon:${id}`, req.body);
+  console.log("ðŸ§© CFG criada:", id);
+  res.json({ id });
+});
+
+// ===============================
+// MANIFEST
+// ===============================
+app.get("/:id/manifest.json", async (req, res) => {
+  try {
+    const cfg = await kv.get(`addon:${req.params.id}`);
+    if (!cfg) return res.status(404).json({ error: "Manifest nÃ£o encontrado" });
+
+    res.json({
+      id: `brazuca-debrid-${req.params.id}`,
+      version: "4.2.0",
+      name: cfg.nome || "BRDebrid",
+      description: "Brazuca + Betor + DFIndexer + Torz + Comet + Torrentio",
+      logo: cfg.icone || "https://brazuca-debrid.vercel.app/logo.png",
+      types: ["movie", "series", "anime"],
+      resources: [{
+        name: "stream",
+        types: ["movie", "series"],
+        idPrefixes: ["tt", "kitsu"]
+      }],
+      catalogs: [],
+      behaviorHints: {
+        configurable: true,
+        configurationRequired: false
+      }
+    });
+  } catch (err) {
+    console.error("Manifest error:", err);
+    res.status(500).json({ error: "Erro interno" });
+  }
+});
+
+// ===============================
+// STREAM COM RESPOSTA RÃPIDA + CACHE EM BACKGROUND
+// ===============================
+app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
+  try {
+    const { id, type, imdb } = req.params;
+    console.log(`\nðŸŽ¬ Request: ${type} ${imdb}`);
+
+    const cfg = await kv.get(`addon:${id}`);
+    if (!cfg) {
+      console.log("âŒ CFG nÃ£o encontrada");
+      return res.json({ streams: [] });
+    }
+
+    const cacheKey = `cache:${id}:${type}:${imdb}`;
+
+    const cached = await kv.get(cacheKey);
+    if (cached) {
+      console.log(`ðŸ’¾ CACHE HIT â€” ${cached.streams?.length || 0} streams instantÃ¢neos`);
+      return res.json(cached);
+    }
+
+    const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
+    console.log(`ðŸ“¡ Upstreams: ${upstreams.map(u => u.name).join(", ")}`);
+    console.log(`ðŸ’³ Debrids: ${stores.length > 0 ? stores.map(s => s.c.toUpperCase()).join(", ") : "nenhum"}`);
+
+    // ===============================
+    // HELPER: busca um upstream com timeout prÃ³prio
+    // ===============================
+    const fetchUpstream = async (upstream, timeoutMs) => {
+      let url;
+
+      if (upstream.isTorz) {
+        url = getTorzUrl(stores, type, imdb);
+      } else {
+        const wrapper = { upstreams: [{ u: upstream.u }], stores };
+        url = `https://stremthru.13377001.xyz/stremio/wrap/${toB64(wrapper)}/stream/${type}/${imdb}.json`;
+      }
+
+      try {
+        const { data } = await axios.get(url, {
+          timeout: timeoutMs,
+          headers: { "User-Agent": "DebridBR/1.0" }
+        });
+        return data.streams || [];
+      } catch (err) {
+        if (err.response) {
+          console.log(`ðŸ” [${upstream.name}] HTTP ${err.response.status} â€” ${JSON.stringify(err.response.data)}`);
+          console.log(`ðŸ” [${upstream.name}] URL: ${url}`);
+        }
+        return [];
+      }
+    };
+
+    // ===============================
+    // ESTÃGIO 1: Resposta rÃ¡pida (todos paralelos, 13s max)
+    // ===============================
+    const FAST_TIMEOUT   = 13000;
+    const FAST_PER_ADDON = 12000;
+
+    const fastResult = await new Promise(resolve => {
+      const accumulated = [];
+      let finished = 0;
+      const total = upstreams.length;
+      let resolved = false;
+
+      const tryResolve = (reason) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(globalTimer);
+        console.log(`â±ï¸  Janela encerrada [${reason}] â€” ${accumulated.length} streams de ${finished}/${total} upstreams`);
+        resolve([...accumulated]);
+      };
+
+      const globalTimer = setTimeout(() => tryResolve("timeout global 13s"), FAST_TIMEOUT);
+
+      upstreams.forEach((upstream) => {
+        fetchUpstream(upstream, FAST_PER_ADDON)
+          .then(streams => {
+            if (streams.length > 0) {
+              accumulated.push(...streams);
+              console.log(`âœ… [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
+            } else {
+              console.log(`âšª [${upstream.name}] 0 streams`);
+            }
+          })
+          .finally(() => {
+            finished++;
+            if (finished === total) tryResolve("todos concluÃ­dos");
+          });
+      });
+    });
+
+    // âœ… DeduplicaÃ§Ã£o na resposta rÃ¡pida
+    const fastDeduped = dedupeStreams(fastResult);
+    console.log(`âš¡ Resposta rÃ¡pida: ${fastResult.length} streams â†’ ${fastDeduped.length} apÃ³s dedup`);
+
+    res.json({ streams: fastDeduped });
+
+    // ===============================
+    // ESTÃGIO 2: Background â€” salva cache completo com dedup
+    // ===============================
+    const backgroundFetch = async () => {
+      try {
+        console.log(`\nðŸ”„ [Background] iniciando para ${imdb}...`);
+
+        const results = await Promise.allSettled(
+          upstreams.map(upstream =>
+            fetchUpstream(upstream, 50000)
+              .then(streams => {
+                if (streams.length > 0) {
+                  console.log(`âœ… [Background][${upstream.name}] ${streams.length} streams`);
+                } else {
+                  console.log(`âšª [Background][${upstream.name}] 0 streams`);
+                }
+                return streams;
+              })
+          )
+        );
+
+        const allStreams = results
+          .filter(r => r.status === "fulfilled")
+          .flatMap(r => r.value)
+          .filter(Boolean);
+
+        // âœ… DeduplicaÃ§Ã£o no cache background
+        const allDeduped = dedupeStreams(allStreams);
+        console.log(`ðŸ“Š [Background] ${allStreams.length} streams â†’ ${allDeduped.length} apÃ³s dedup`);
+
+        if (allDeduped.length > 0) {
+          await kv.set(cacheKey, { streams: allDeduped }, { ex: 1800 });
+          console.log(`ðŸ’¾ [Background] cache salvo â€” prÃ³xima busca serÃ¡ instantÃ¢nea`);
+        }
+      } catch (err) {
+        console.error(`ðŸš¨ [Background] erro: ${err.message}`);
+      }
+    };
+
+    backgroundFetch();
+
+  } catch (err) {
+    console.error("ðŸš¨ ERRO 500:", err.message);
+    res.status(500).json({ streams: [], error: "Erro interno" });
+  }
+});
+
+app.get("/:id/stream/:type/:imdb", (req, res) => {
+  res.redirect(`/${req.params.id}/stream/${req.params.type}/${req.params.imdb}.json`);
+});
+
+// ===============================
+// DEBUG
+// ===============================
+app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
+  const { id, type, imdb } = req.params;
+  const cfg = await kv.get(`addon:${id}`);
+  if (!cfg) return res.json({ error: "CFG nÃ£o encontrada" });
+
+  const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
+  const torzUrl = getTorzUrl(stores, type, imdb);
+
+  res.json({
+    upstreams: upstreams.map((u, i) => ({
+      index: i + 1,
+      name: u.name,
+      isTorz: !!u.isTorz,
+      url: u.isTorz ? torzUrl : u.u
+    })),
+    stores: stores.map(s => s.c),
+    imdb
+  });
+});
+
+// ===============================
+// INDEX
+// ===============================
+app.get("/", (req, res) => {
+  res.sendFile(__dirname + "/public/index.html");
+});
+
+module.exports = app;
