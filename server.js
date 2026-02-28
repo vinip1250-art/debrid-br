@@ -8,7 +8,7 @@ app.use(cors());
 app.use(express.json());
 
 // ===============================
-// CONFIGURAÃ‡ÃƒO DO REDIS
+// CONFIGURAÇÃO DO REDIS
 // ===============================
 const kv = new Redis({
   url: process.env.KV_REST_API_URL,
@@ -31,7 +31,7 @@ function toB64Raw(obj) {
 }
 
 // ===============================
-// DEDUPLICAÃ‡ÃƒO DE STREAMS
+// DEDUPLICAÇÃO DE STREAMS
 // Remove streams duplicados entre addons usando infoHash ou url como chave.
 // ===============================
 function dedupeStreams(streams) {
@@ -62,7 +62,7 @@ function dedupeStreams(streams) {
 }
 
 // ===============================
-// COMET â€” gerado dinamicamente
+// COMET – gerado dinamicamente
 // ===============================
 function getCometManifest() {
   const cometCfg = {
@@ -83,19 +83,19 @@ function getCometManifest() {
 const COMET_MANIFEST_URL = getCometManifest();
 
 // ===============================
-// TORZ â€” gerado por request com os stores do usuÃ¡rio
+// TORZ – gerado por request com os stores do usuário
 // ===============================
 function getTorzUrl(stores, type, imdb) {
   const torzCfg = {
     stores,
     filter:
-      "File.Name matches '(?i)(dublado|dual.5|dual.2|nacional|brazilian|pt-br|ptbr|brasil|brazil|brremux|cza|freddiegellar|sgf|asc|dual-bioma|dual-c76|fly|tossato|7sprit7|c.a.a|c0ral|cbr|dual-nogroup|pia|xor|g4ris|sigma|andrehsa|riper|sigla|tontom|eck)'"
+      "File.Name matches '(?i)(brremux|cza|freddiegellar|sgf|asc|dual-bioma|dual-c76|fly|tossato|7sprit7|c\\.a\\.a|c0ral|cbr|dual-nogroup|dual-pia|xor|g4ris|sigma|andrehsa|riper|sigla|sh4down|gjumandi|silveira|tontom|eck|arcanjo|bj-share|epik|gusta|crime|universal|maestro|bludv|ingram|dublado|nacional|hdtv-br|bdrip-br|batata|cinefoot|savana|coala|nyne|hmax)'"
   };
   return `https://stremthru.13377001.xyz/stremio/torz/${toB64Raw(torzCfg)}/stream/${type}/${imdb}.json`;
 }
 
 // ===============================
-// FUNÃ‡ÃƒO AUXILIAR (DRY)
+// FUNÇÃO AUXILIAR (DRY)
 // ===============================
 function buildUpstreamsAndStores(cfg, imdb) {
   const isAnime = imdb.startsWith("kitsu:");
@@ -119,17 +119,27 @@ function buildUpstreamsAndStores(cfg, imdb) {
       name: "Torz",
       isTorz: true
     });
+
+    // Comet: apenas para conteúdo não-anime
+    if (cfg.cometa === true) {
+      upstreams.push({ name: "Comet", u: COMET_MANIFEST_URL });
+    }
   }
 
-  if (cfg.cometa === true) {
-    upstreams.push({ name: "Comet", u: COMET_MANIFEST_URL });
-  }
-
-  if (cfg.torrentio === true) {
+  // Brazucas Torrent e Torrentio: apenas para animes
+  if (isAnime) {
+    // Brazucas Torrent sempre ativo para animes
     upstreams.push({
-      name: "Torrentio",
-      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
+      name: "BrazucasTorrent",
+      u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
     });
+
+    if (cfg.torrentio === true) {
+      upstreams.push({
+        name: "Torrentio",
+        u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
+      });
+    }
   }
 
   const stores = [];
@@ -138,7 +148,7 @@ function buildUpstreamsAndStores(cfg, imdb) {
   if (cfg.premiumize)  stores.push({ c: "pm", t: cfg.premiumize });
   if (cfg.debridlink)  stores.push({ c: "dl", t: cfg.debridlink });
   if (cfg.alldebrid)   stores.push({ c: "ad", t: cfg.alldebrid });
-  if (cfg.offcloud)    stores.push({ c: "oc", t: cfg.offcloud }); // âœ… Offcloud
+  if (cfg.offcloud)    stores.push({ c: "oc", t: cfg.offcloud });
 
   return { isAnime, upstreams, stores };
 }
@@ -149,7 +159,7 @@ function buildUpstreamsAndStores(cfg, imdb) {
 app.post("/gerar", async (req, res) => {
   const id = Math.random().toString(36).substring(2, 10);
   await kv.set(`addon:${id}`, req.body);
-  console.log("ðŸ§© CFG criada:", id);
+  console.log("🧩 CFG criada:", id);
   res.json({ id });
 });
 
@@ -159,7 +169,7 @@ app.post("/gerar", async (req, res) => {
 app.get("/:id/manifest.json", async (req, res) => {
   try {
     const cfg = await kv.get(`addon:${req.params.id}`);
-    if (!cfg) return res.status(404).json({ error: "Manifest nÃ£o encontrado" });
+    if (!cfg) return res.status(404).json({ error: "Manifest não encontrado" });
 
     res.json({
       id: `brazuca-debrid-${req.params.id}`,
@@ -186,16 +196,16 @@ app.get("/:id/manifest.json", async (req, res) => {
 });
 
 // ===============================
-// STREAM COM RESPOSTA RÃPIDA + CACHE EM BACKGROUND
+// STREAM COM RESPOSTA RÁPIDA + CACHE EM BACKGROUND
 // ===============================
 app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
   try {
     const { id, type, imdb } = req.params;
-    console.log(`\nðŸŽ¬ Request: ${type} ${imdb}`);
+    console.log(`\n🎬 Request: ${type} ${imdb}`);
 
     const cfg = await kv.get(`addon:${id}`);
     if (!cfg) {
-      console.log("âŒ CFG nÃ£o encontrada");
+      console.log("❌ CFG não encontrada");
       return res.json({ streams: [] });
     }
 
@@ -203,16 +213,16 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
 
     const cached = await kv.get(cacheKey);
     if (cached) {
-      console.log(`ðŸ’¾ CACHE HIT â€” ${cached.streams?.length || 0} streams instantÃ¢neos`);
+      console.log(`💾 CACHE HIT – ${cached.streams?.length || 0} streams instantâneos`);
       return res.json(cached);
     }
 
     const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
-    console.log(`ðŸ“¡ Upstreams: ${upstreams.map(u => u.name).join(", ")}`);
-    console.log(`ðŸ’³ Debrids: ${stores.length > 0 ? stores.map(s => s.c.toUpperCase()).join(", ") : "nenhum"}`);
+    console.log(`📡 Upstreams: ${upstreams.map(u => u.name).join(", ")}`);
+    console.log(`💳 Debrids: ${stores.length > 0 ? stores.map(s => s.c.toUpperCase()).join(", ") : "nenhum"}`);
 
     // ===============================
-    // HELPER: busca um upstream com timeout prÃ³prio
+    // HELPER: busca um upstream com timeout próprio
     // ===============================
     const fetchUpstream = async (upstream, timeoutMs) => {
       let url;
@@ -232,15 +242,15 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         return data.streams || [];
       } catch (err) {
         if (err.response) {
-          console.log(`ðŸ” [${upstream.name}] HTTP ${err.response.status} â€” ${JSON.stringify(err.response.data)}`);
-          console.log(`ðŸ” [${upstream.name}] URL: ${url}`);
+          console.log(`🔍 [${upstream.name}] HTTP ${err.response.status} – ${JSON.stringify(err.response.data)}`);
+          console.log(`🔍 [${upstream.name}] URL: ${url}`);
         }
         return [];
       }
     };
 
     // ===============================
-    // ESTÃGIO 1: Resposta rÃ¡pida (todos paralelos, 13s max)
+    // ESTÁGIO 1: Resposta rápida (todos paralelos, 13s max)
     // ===============================
     const FAST_TIMEOUT   = 13000;
     const FAST_PER_ADDON = 12000;
@@ -255,7 +265,7 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
         if (resolved) return;
         resolved = true;
         clearTimeout(globalTimer);
-        console.log(`â±ï¸  Janela encerrada [${reason}] â€” ${accumulated.length} streams de ${finished}/${total} upstreams`);
+        console.log(`⏱️  Janela encerrada [${reason}] – ${accumulated.length} streams de ${finished}/${total} upstreams`);
         resolve([...accumulated]);
       };
 
@@ -266,39 +276,39 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
           .then(streams => {
             if (streams.length > 0) {
               accumulated.push(...streams);
-              console.log(`âœ… [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
+              console.log(`✅ [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
             } else {
-              console.log(`âšª [${upstream.name}] 0 streams`);
+              console.log(`⚪ [${upstream.name}] 0 streams`);
             }
           })
           .finally(() => {
             finished++;
-            if (finished === total) tryResolve("todos concluÃ­dos");
+            if (finished === total) tryResolve("todos concluídos");
           });
       });
     });
 
-    // âœ… DeduplicaÃ§Ã£o na resposta rÃ¡pida
+    // ✅ Deduplicação na resposta rápida
     const fastDeduped = dedupeStreams(fastResult);
-    console.log(`âš¡ Resposta rÃ¡pida: ${fastResult.length} streams â†’ ${fastDeduped.length} apÃ³s dedup`);
+    console.log(`⚡ Resposta rápida: ${fastResult.length} streams → ${fastDeduped.length} após dedup`);
 
     res.json({ streams: fastDeduped });
 
     // ===============================
-    // ESTÃGIO 2: Background â€” salva cache completo com dedup
+    // ESTÁGIO 2: Background – salva cache completo com dedup
     // ===============================
     const backgroundFetch = async () => {
       try {
-        console.log(`\nðŸ”„ [Background] iniciando para ${imdb}...`);
+        console.log(`\n🔄 [Background] iniciando para ${imdb}...`);
 
         const results = await Promise.allSettled(
           upstreams.map(upstream =>
             fetchUpstream(upstream, 50000)
               .then(streams => {
                 if (streams.length > 0) {
-                  console.log(`âœ… [Background][${upstream.name}] ${streams.length} streams`);
+                  console.log(`✅ [Background][${upstream.name}] ${streams.length} streams`);
                 } else {
-                  console.log(`âšª [Background][${upstream.name}] 0 streams`);
+                  console.log(`⚪ [Background][${upstream.name}] 0 streams`);
                 }
                 return streams;
               })
@@ -310,23 +320,23 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
           .flatMap(r => r.value)
           .filter(Boolean);
 
-        // âœ… DeduplicaÃ§Ã£o no cache background
+        // ✅ Deduplicação no cache background
         const allDeduped = dedupeStreams(allStreams);
-        console.log(`ðŸ“Š [Background] ${allStreams.length} streams â†’ ${allDeduped.length} apÃ³s dedup`);
+        console.log(`📊 [Background] ${allStreams.length} streams → ${allDeduped.length} após dedup`);
 
         if (allDeduped.length > 0) {
           await kv.set(cacheKey, { streams: allDeduped }, { ex: 1800 });
-          console.log(`ðŸ’¾ [Background] cache salvo â€” prÃ³xima busca serÃ¡ instantÃ¢nea`);
+          console.log(`💾 [Background] cache salvo – próxima busca será instantânea`);
         }
       } catch (err) {
-        console.error(`ðŸš¨ [Background] erro: ${err.message}`);
+        console.error(`🚨 [Background] erro: ${err.message}`);
       }
     };
 
     backgroundFetch();
 
   } catch (err) {
-    console.error("ðŸš¨ ERRO 500:", err.message);
+    console.error("🚨 ERRO 500:", err.message);
     res.status(500).json({ streams: [], error: "Erro interno" });
   }
 });
@@ -341,7 +351,7 @@ app.get("/:id/stream/:type/:imdb", (req, res) => {
 app.get("/debug-stream/:id/:type/:imdb", async (req, res) => {
   const { id, type, imdb } = req.params;
   const cfg = await kv.get(`addon:${id}`);
-  if (!cfg) return res.json({ error: "CFG nÃ£o encontrada" });
+  if (!cfg) return res.json({ error: "CFG não encontrada" });
 
   const { upstreams, stores } = buildUpstreamsAndStores(cfg, imdb);
   const torzUrl = getTorzUrl(stores, type, imdb);
