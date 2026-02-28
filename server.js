@@ -91,7 +91,7 @@ function getTorzUrl(stores, type, imdb) {
     filter:
       "File.Name matches '(?i)(brremux|cza|freddiegellar|sgf|asc|dual-bioma|dual-c76|fly|tossato|7sprit7|c\\.a\\.a|c0ral|cbr|dual-nogroup|dual-pia|xor|g4ris|sigma|andrehsa|riper|sigla|sh4down|gjumandi|silveira|tontom|eck|arcanjo|bj-share|epik|gusta|crime|universal|maestro|bludv|ingram|dublado|nacional|hdtv-br|bdrip-br|batata|cinefoot|savana|coala|nyne|hmax)'"
   };
-  return `https://stremthru.13377001.xyz/stremio/torz/${toB64Raw(torzCfg)}/stream/${type}/${imdb}.json`;
+  return `https://stremthrufortheweebs.midnightignite.me/stremio/torz/${toB64Raw(torzCfg)}/stream/${type}/${imdb}.json`;
 }
 
 // ===============================
