@@ -89,7 +89,7 @@ function getTorzUrl(stores, type, imdb) {
   const torzCfg = {
     stores,
     filter:
-      "File.Name matches '(?i)(brremux|cza|freddiegellar|sgf|asc|dual-bioma|dual-c76|fly|tossato|7sprit7|c\\.a\\.a|c0ral|cbr|dual-nogroup|dual-pia|xor|g4ris|sigma|andrehsa|riper|sigla|sh4down|gjumandi|silveira|tontom|eck|arcanjo|bj-share|epik|gusta|crime|universal|maestro|bludv|ingram|dublado|nacional|hdtv-br|bdrip-br|batata|cinefoot|savana|coala|nyne|hmax)'"
+      "File.Name matches '(?i)(brremux|cza|freddiegellar|sgf|asc|dual-bioma|dual-c76|fly|tossato|c0ral|cbr|dual-nogroup|dual-pia|xor|g4ris|sigma|andrehsa|riper|sigla|tontom|eck|bj-share)'"
   };
   return `https://stremthrufortheweebs.midnightignite.me/stremio/torz/${toB64Raw(torzCfg)}/stream/${type}/${imdb}.json`;
 }
@@ -101,8 +101,9 @@ function buildUpstreamsAndStores(cfg, imdb) {
   const isAnime = imdb.startsWith("kitsu:");
   const upstreams = [];
 
+  // Brazuca Torrents: sempre ativo, via StremThru wrap
   upstreams.push({
-    name: "Brazuca",
+    name: "Brazuca Torrents",
     u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
   });
 
@@ -126,20 +127,12 @@ function buildUpstreamsAndStores(cfg, imdb) {
     }
   }
 
-  // Brazucas Torrent e Torrentio: apenas para animes
-  if (isAnime) {
-    // Brazucas Torrent sempre ativo para animes
+  // Torrentio: filmes, séries e animes, requer ativação
+  if (cfg.torrentio === true) {
     upstreams.push({
-      name: "BrazucasTorrent",
-      u: "https://94c8cb9f702d-brazuca-torrents.baby-beamup.club/manifest.json"
+      name: "Torrentio",
+      u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
     });
-
-    if (cfg.torrentio === true) {
-      upstreams.push({
-        name: "Torrentio",
-        u: "https://torrentio.strem.fun/providers=nyaasi,tokyotosho,anidex,nekobt,comando,bludv,micoleaodublado|language=portuguese/manifest.json"
-      });
-    }
   }
 
   const stores = [];
@@ -277,7 +270,10 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
             if (streams.length > 0) {
               accumulated.push(...streams);
               console.log(`✅ [${upstream.name}] ${streams.length} streams (acumulado: ${accumulated.length})`);
-            } else {
+            } else if (upstream.direct) {
+        // Chamada direta sem wrapper StremThru (para animes com kitsu:)
+        url = `${upstream.u.replace("/manifest.json", "")}/stream/${type}/${imdb}.json`;
+      } else {
               console.log(`⚪ [${upstream.name}] 0 streams`);
             }
           })
@@ -307,7 +303,10 @@ app.get("/:id/stream/:type/:imdb.json", async (req, res) => {
               .then(streams => {
                 if (streams.length > 0) {
                   console.log(`✅ [Background][${upstream.name}] ${streams.length} streams`);
-                } else {
+                } else if (upstream.direct) {
+        // Chamada direta sem wrapper StremThru (para animes com kitsu:)
+        url = `${upstream.u.replace("/manifest.json", "")}/stream/${type}/${imdb}.json`;
+      } else {
                   console.log(`⚪ [Background][${upstream.name}] 0 streams`);
                 }
                 return streams;
